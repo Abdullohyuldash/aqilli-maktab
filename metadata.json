@@ -1,0 +1,6 @@
+{
+  "name": "3D Bilimlar Maktabi",
+  "description": "Maktab o'quvchilari (1–11-sinflar) uchun Roblox uslubidagi interaktiv 3D ta'limiy o'yin: matematika, ingliz tili, informatika va tabiiy fanlar darslari hamda 3D aksessuarlar do'koni.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
