@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EquippedAccessories, PlayerGender } from '../types';
+import { AvatarEmote, EquippedAccessories, PlayerGender, TrashKind } from '../types';
 import { createContactShadowTexture } from './textures';
 
 export interface RobloxAvatarRig {
@@ -33,6 +33,9 @@ export interface RobloxAvatarRig {
   setShirtColor: (hex: string) => void;
   setGender: (gender: PlayerGender) => void;
   applyAccessories: (equipped: EquippedAccessories) => void;
+  setHeldTrash: (kind: TrashKind | null) => void;
+  triggerEmote: (emote: AvatarEmote, durationSec?: number) => void;
+  isEmoteActive: () => boolean;
   updateAnimation: (dt: number, speedRatio: number, isAirborne: boolean, yHeight: number) => void;
   dispose: () => void;
 }
@@ -1034,6 +1037,116 @@ export function createRobloxAvatar(
   }
   rightArmPivot.add(scholarBook);
 
+  // =========================================================================
+  // CARRIED 3D TRASH IN RIGHT HAND + OVERHEAD CARRY INDICATOR SPRITE
+  // =========================================================================
+  const heldTrashGroup = new THREE.Group();
+  heldTrashGroup.position.set(0.02, -0.86, 0.24);
+  heldTrashGroup.visible = false;
+
+  const heldPaperGroup = new THREE.Group();
+  {
+    const pLight = trackMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.9, metalness: 0.02 }));
+    const pShade = trackMat(new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.86, metalness: 0.02 }));
+    const w1 = enableShadows(new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.16, 0)), pLight));
+    w1.scale.set(1.08, 0.85, 0.95);
+    heldPaperGroup.add(w1);
+    const w2 = new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.11, 0)), pShade);
+    w2.position.set(0.09, 0.04, 0.06);
+    heldPaperGroup.add(w2);
+    const w3 = new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.09, 0)), pLight);
+    w3.position.set(-0.08, -0.04, -0.05);
+    heldPaperGroup.add(w3);
+  }
+  heldTrashGroup.add(heldPaperGroup);
+
+  const heldJuiceGroup = new THREE.Group();
+  {
+    const jBody = trackMat(new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.45, metalness: 0.04 }));
+    const jBand = trackMat(new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.55, metalness: 0.02 }));
+    const box = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.2, 0.3, 0.14)), jBody));
+    heldJuiceGroup.add(box);
+    const band = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.21, 0.11, 0.15)), jBand);
+    heldJuiceGroup.add(band);
+    const straw = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.016, 0.016, 0.14, 6)), crispWhiteMat);
+    straw.position.set(0.04, 0.2, 0);
+    heldJuiceGroup.add(straw);
+  }
+  heldTrashGroup.add(heldJuiceGroup);
+
+  const heldBottleGroup = new THREE.Group();
+  {
+    const bBody = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: 0x7dd3fc,
+        roughness: 0.18,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.88,
+      })
+    );
+    const bCap = trackMat(new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3, metalness: 0.15 }));
+    const bLabel = trackMat(new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.42, metalness: 0.05 }));
+    const cyl = enableShadows(new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.09, 0.09, 0.34, 10)), bBody));
+    heldBottleGroup.add(cyl);
+    const lbl = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.094, 0.094, 0.12, 10)), bLabel);
+    heldBottleGroup.add(lbl);
+    const neck = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.042, 0.09, 0.1, 10)), bBody);
+    neck.position.y = 0.22;
+    heldBottleGroup.add(neck);
+    const cap = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.046, 0.046, 0.05, 10)), bCap);
+    cap.position.y = 0.29;
+    heldBottleGroup.add(cap);
+  }
+  heldTrashGroup.add(heldBottleGroup);
+
+  rightArmPivot.add(heldTrashGroup);
+
+  // Floating 3D overhead indicator badge when carrying trash: "🗑️ Axlat qutisiga olib boring"
+  let carryBadgeSprite: THREE.Sprite | null = null;
+  if (!isTeacher) {
+    const badgeCanvas = document.createElement('canvas');
+    badgeCanvas.width = 512;
+    badgeCanvas.height = 112;
+    const bctx = badgeCanvas.getContext('2d');
+    if (bctx) {
+      bctx.clearRect(0, 0, 512, 112);
+      const r = 42;
+      bctx.fillStyle = 'rgba(6, 78, 59, 0.92)';
+      bctx.beginPath();
+      bctx.roundRect(12, 14, 488, 84, r);
+      bctx.fill();
+      bctx.lineWidth = 4;
+      bctx.strokeStyle = '#34D399';
+      bctx.stroke();
+
+      bctx.font = 'bold 28px "Plus Jakarta Sans", system-ui, sans-serif';
+      bctx.fillStyle = '#ECFDF5';
+      bctx.textAlign = 'center';
+      bctx.textBaseline = 'middle';
+      bctx.fillText('🗑️ Axlat qutisiga olib boring', 256, 57);
+    }
+    const badgeTex = new THREE.CanvasTexture(badgeCanvas);
+    badgeTex.colorSpace = THREE.SRGBColorSpace;
+    textures.push(badgeTex);
+
+    const badgeMat = trackMat(
+      new THREE.SpriteMaterial({
+        map: badgeTex,
+        transparent: true,
+        depthTest: false,
+      })
+    );
+    carryBadgeSprite = new THREE.Sprite(badgeMat);
+    carryBadgeSprite.scale.set(2.55, 0.56, 1);
+    carryBadgeSprite.position.set(0, 3.25, 0);
+    carryBadgeSprite.visible = false;
+    carryBadgeSprite.renderOrder = 25;
+    root.add(carryBadgeSprite);
+  }
+
+  let heldTrashKind: TrashKind | null = null;
+
   // Ground contact shadow disc
   const shadowTex = createContactShadowTexture();
   textures.push(shadowTex);
@@ -1093,7 +1206,7 @@ export function createRobloxAvatar(
 
     schoolWatch.visible = eq.watch === 'school_watch';
     honorMedal.visible = eq.medal === 'honor_medal';
-    scholarBook.visible = eq.book === 'scholar_book';
+    scholarBook.visible = eq.book === 'scholar_book' && heldTrashKind === null;
 
     // Keep medal cleanly in front of thicker blazer/vest/apron layers
     honorMedal.position.z =
@@ -1143,34 +1256,323 @@ export function createRobloxAvatar(
   let walkPhase = 0;
   let idlePhase = 0;
 
+  let activeEmote: AvatarEmote | null = null;
+  let emoteElapsed = 0;
+  let emoteDuration = 2.8;
+
+  const DEFAULT_EMOTE_DURATIONS: Record<AvatarEmote, number> = {
+    salom: 2.75,
+    qarsak: 2.8,
+    quvonch: 2.85,
+    milliy_raqs: 3.0,
+  };
+
+  const triggerEmote = (emote: AvatarEmote, durationSec?: number) => {
+    activeEmote = emote;
+    emoteElapsed = 0;
+    emoteDuration = Math.max(1.2, durationSec ?? DEFAULT_EMOTE_DURATIONS[emote]);
+  };
+
+  const isEmoteActive = () => activeEmote !== null;
+
+  const dampSecondaryAxesToNeutral = (dt: number, speed = 11) => {
+    leftArmPivot.rotation.y = THREE.MathUtils.damp(leftArmPivot.rotation.y, 0, speed, dt);
+    leftArmPivot.rotation.z = THREE.MathUtils.damp(leftArmPivot.rotation.z, 0, speed, dt);
+    rightArmPivot.rotation.y = THREE.MathUtils.damp(rightArmPivot.rotation.y, 0, speed, dt);
+    rightArmPivot.rotation.z = THREE.MathUtils.damp(rightArmPivot.rotation.z, 0, speed, dt);
+    headGroup.rotation.x = THREE.MathUtils.damp(headGroup.rotation.x, 0, speed, dt);
+    headGroup.rotation.y = THREE.MathUtils.damp(headGroup.rotation.y, 0, speed, dt);
+    bodyGroup.rotation.x = THREE.MathUtils.damp(bodyGroup.rotation.x, 0, speed, dt);
+    bodyGroup.rotation.y = THREE.MathUtils.damp(bodyGroup.rotation.y, 0, speed, dt);
+    bodyGroup.rotation.z = THREE.MathUtils.damp(bodyGroup.rotation.z, 0, speed, dt);
+  };
+
   const updateAnimation = (dt: number, speedRatio: number, isAirborne: boolean, yHeight: number) => {
     idlePhase += dt * 3.2;
 
+    // Immediately cancel any active emote when player walks, runs, or jumps
+    if ((speedRatio > 0.05 || isAirborne) && activeEmote !== null) {
+      activeEmote = null;
+      emoteElapsed = 0;
+    }
+
+    const isCarryingTrash = heldTrashKind !== null;
+    const restRightArmX = isCarryingTrash ? -0.62 : scholarBook.visible ? -0.28 : 0;
+
     if (isAirborne) {
       leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -2.1, 10, dt);
-      rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, scholarBook.visible ? -0.9 : -2.1, 10, dt);
+      rightArmPivot.rotation.x = THREE.MathUtils.damp(
+        rightArmPivot.rotation.x,
+        isCarryingTrash ? -0.82 : scholarBook.visible ? -0.9 : -2.1,
+        10,
+        dt
+      );
       leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0.38, 10, dt);
       rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -0.35, 10, dt);
       bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, 0, 12, dt);
+      headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, 0, 10, dt);
+      dampSecondaryAxesToNeutral(dt, 11);
     } else if (speedRatio > 0.05) {
       walkPhase += dt * (8.5 + speedRatio * 4.5);
       const swing = Math.sin(walkPhase) * 0.72 * Math.min(1, speedRatio);
-      leftLegPivot.rotation.x = swing;
-      rightLegPivot.rotation.x = -swing;
-      leftArmPivot.rotation.x = -swing * 0.82;
-      rightArmPivot.rotation.x = scholarBook.visible ? -0.32 + swing * 0.28 : swing * 0.82;
-      bodyGroup.position.y = Math.abs(Math.sin(walkPhase)) * 0.075 * Math.min(1, speedRatio);
-      headGroup.rotation.z = Math.sin(walkPhase) * 0.04;
+      leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, swing, 16, dt);
+      rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -swing, 16, dt);
+      leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -swing * 0.82, 16, dt);
+      rightArmPivot.rotation.x = THREE.MathUtils.damp(
+        rightArmPivot.rotation.x,
+        isCarryingTrash
+          ? -0.64 + swing * 0.22
+          : scholarBook.visible
+          ? -0.32 + swing * 0.28
+          : swing * 0.82,
+        16,
+        dt
+      );
+      bodyGroup.position.y = THREE.MathUtils.damp(
+        bodyGroup.position.y,
+        Math.abs(Math.sin(walkPhase)) * 0.075 * Math.min(1, speedRatio),
+        16,
+        dt
+      );
+      headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, Math.sin(walkPhase) * 0.04, 14, dt);
+      dampSecondaryAxesToNeutral(dt, 12);
+    } else if (activeEmote !== null) {
+      emoteElapsed += dt;
+      const t = emoteElapsed;
+      const remaining = emoteDuration - emoteElapsed;
+
+      if (remaining <= 0) {
+        activeEmote = null;
+        emoteElapsed = 0;
+      } else if (activeEmote === 'salom') {
+        // Polite Uzbek "Assalomu alaykum": right hand over heart, gentle respectful bow (~2s hold), smooth return
+        const isReturning = remaining < 0.5;
+        const tRightArmX = isReturning ? restRightArmX : -0.96;
+        const tRightArmY = isReturning ? 0 : 0.24;
+        const tRightArmZ = isReturning ? 0 : -0.68;
+        const tLeftArmX = isReturning ? 0 : 0.05;
+        const tLeftArmZ = isReturning ? 0 : 0.06;
+        const tHeadX = isReturning ? 0 : 0.3 + Math.sin(t * 2.2) * 0.02;
+        const tBodyX = isReturning ? 0 : 0.1;
+        const speed = isReturning ? 7.5 : 8.5;
+
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, tRightArmX, speed, dt);
+        rightArmPivot.rotation.y = THREE.MathUtils.damp(rightArmPivot.rotation.y, tRightArmY, speed, dt);
+        rightArmPivot.rotation.z = THREE.MathUtils.damp(rightArmPivot.rotation.z, tRightArmZ, speed, dt);
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, tLeftArmX, speed, dt);
+        leftArmPivot.rotation.y = THREE.MathUtils.damp(leftArmPivot.rotation.y, 0, speed, dt);
+        leftArmPivot.rotation.z = THREE.MathUtils.damp(leftArmPivot.rotation.z, tLeftArmZ, speed, dt);
+        headGroup.rotation.x = THREE.MathUtils.damp(headGroup.rotation.x, tHeadX, speed, dt);
+        headGroup.rotation.y = THREE.MathUtils.damp(headGroup.rotation.y, 0, speed, dt);
+        headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, 0, speed, dt);
+        bodyGroup.rotation.x = THREE.MathUtils.damp(bodyGroup.rotation.x, tBodyX, speed, dt);
+        bodyGroup.rotation.y = THREE.MathUtils.damp(bodyGroup.rotation.y, 0, speed, dt);
+        bodyGroup.rotation.z = THREE.MathUtils.damp(bodyGroup.rotation.z, 0, speed, dt);
+        bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, 0, speed, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0, speed, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, 0, speed, dt);
+      } else if (activeEmote === 'qarsak') {
+        // Polite, rhythmic applause in front of chest with sinusoidal oscillation
+        const isReturning = remaining < 0.38;
+        const clapWave = (Math.sin(t * 13.5) + 1) * 0.5;
+        const clapIn = 0.2 + clapWave * 0.44;
+        const speed = isReturning ? 9 : 16;
+
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, isReturning ? 0 : -1.24, speed, dt);
+        leftArmPivot.rotation.y = THREE.MathUtils.damp(leftArmPivot.rotation.y, isReturning ? 0 : -0.25, speed, dt);
+        leftArmPivot.rotation.z = THREE.MathUtils.damp(leftArmPivot.rotation.z, isReturning ? 0 : clapIn, speed, dt);
+
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(
+          rightArmPivot.rotation.x,
+          isReturning ? restRightArmX : -1.24,
+          speed,
+          dt
+        );
+        rightArmPivot.rotation.y = THREE.MathUtils.damp(rightArmPivot.rotation.y, isReturning ? 0 : 0.25, speed, dt);
+        rightArmPivot.rotation.z = THREE.MathUtils.damp(rightArmPivot.rotation.z, isReturning ? 0 : -clapIn, speed, dt);
+
+        headGroup.rotation.x = THREE.MathUtils.damp(
+          headGroup.rotation.x,
+          isReturning ? 0 : Math.sin(t * 6.75) * 0.08,
+          10,
+          dt
+        );
+        headGroup.rotation.y = THREE.MathUtils.damp(headGroup.rotation.y, 0, 10, dt);
+        headGroup.rotation.z = THREE.MathUtils.damp(
+          headGroup.rotation.z,
+          isReturning ? 0 : Math.sin(t * 3.4) * 0.04,
+          10,
+          dt
+        );
+        bodyGroup.position.y = THREE.MathUtils.damp(
+          bodyGroup.position.y,
+          isReturning ? 0 : Math.abs(Math.sin(t * 6.75)) * 0.04,
+          12,
+          dt
+        );
+        bodyGroup.rotation.x = THREE.MathUtils.damp(bodyGroup.rotation.x, 0, 10, dt);
+        bodyGroup.rotation.y = THREE.MathUtils.damp(bodyGroup.rotation.y, 0, 10, dt);
+        bodyGroup.rotation.z = THREE.MathUtils.damp(bodyGroup.rotation.z, 0, 10, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0, 10, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, 0, 10, dt);
+      } else if (activeEmote === 'quvonch') {
+        // Joyful success celebration: arms raised high in V, light celebratory hops, affirming nod
+        const isReturning = remaining < 0.4;
+        const hop = isReturning ? 0 : Math.pow(Math.max(0, Math.sin(t * 6.4)), 1.45) * 0.34;
+        const armPulse = Math.sin(t * 9.5) * 0.14;
+        const speed = isReturning ? 9 : 13;
+
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(
+          leftArmPivot.rotation.x,
+          isReturning ? 0 : -2.72 + armPulse,
+          speed,
+          dt
+        );
+        leftArmPivot.rotation.y = THREE.MathUtils.damp(leftArmPivot.rotation.y, 0, speed, dt);
+        leftArmPivot.rotation.z = THREE.MathUtils.damp(
+          leftArmPivot.rotation.z,
+          isReturning ? 0 : -0.26 - Math.abs(armPulse) * 0.4,
+          speed,
+          dt
+        );
+
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(
+          rightArmPivot.rotation.x,
+          isReturning ? restRightArmX : -2.72 - armPulse,
+          speed,
+          dt
+        );
+        rightArmPivot.rotation.y = THREE.MathUtils.damp(rightArmPivot.rotation.y, 0, speed, dt);
+        rightArmPivot.rotation.z = THREE.MathUtils.damp(
+          rightArmPivot.rotation.z,
+          isReturning ? 0 : 0.26 + Math.abs(armPulse) * 0.4,
+          speed,
+          dt
+        );
+
+        bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, hop, 15, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, hop * 0.55, 14, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -hop * 0.45, 14, dt);
+
+        headGroup.rotation.x = THREE.MathUtils.damp(
+          headGroup.rotation.x,
+          isReturning ? 0 : Math.sin(t * 12.8) * 0.13,
+          12,
+          dt
+        );
+        headGroup.rotation.y = THREE.MathUtils.damp(headGroup.rotation.y, 0, 10, dt);
+        headGroup.rotation.z = THREE.MathUtils.damp(
+          headGroup.rotation.z,
+          isReturning ? 0 : Math.sin(t * 6.4) * 0.06,
+          10,
+          dt
+        );
+        bodyGroup.rotation.x = THREE.MathUtils.damp(bodyGroup.rotation.x, 0, 10, dt);
+        bodyGroup.rotation.y = THREE.MathUtils.damp(bodyGroup.rotation.y, 0, 10, dt);
+        bodyGroup.rotation.z = THREE.MathUtils.damp(bodyGroup.rotation.z, 0, 10, dt);
+      } else if (activeEmote === 'milliy_raqs') {
+        // Dignified Uzbek national dance: graceful arched arms, rhythmic wrist/shoulder flutter, gentle torso sway
+        const isReturning = remaining < 0.42;
+        const beat = Math.sin(t * 5.2);
+        const wristFlutter = Math.sin(t * 10.4);
+        const slowSway = Math.sin(t * 2.6);
+        const speed = isReturning ? 8.5 : 11;
+
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(
+          leftArmPivot.rotation.x,
+          isReturning ? 0 : -2.52 + beat * 0.24,
+          speed,
+          dt
+        );
+        leftArmPivot.rotation.y = THREE.MathUtils.damp(
+          leftArmPivot.rotation.y,
+          isReturning ? 0 : wristFlutter * 0.52,
+          speed,
+          dt
+        );
+        leftArmPivot.rotation.z = THREE.MathUtils.damp(
+          leftArmPivot.rotation.z,
+          isReturning ? 0 : -0.5 + beat * 0.15,
+          speed,
+          dt
+        );
+
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(
+          rightArmPivot.rotation.x,
+          isReturning ? restRightArmX : -2.52 - beat * 0.24,
+          speed,
+          dt
+        );
+        rightArmPivot.rotation.y = THREE.MathUtils.damp(
+          rightArmPivot.rotation.y,
+          isReturning ? 0 : -wristFlutter * 0.52,
+          speed,
+          dt
+        );
+        rightArmPivot.rotation.z = THREE.MathUtils.damp(
+          rightArmPivot.rotation.z,
+          isReturning ? 0 : 0.5 + beat * 0.15,
+          speed,
+          dt
+        );
+
+        bodyGroup.rotation.x = THREE.MathUtils.damp(bodyGroup.rotation.x, 0, 10, dt);
+        bodyGroup.rotation.y = THREE.MathUtils.damp(
+          bodyGroup.rotation.y,
+          isReturning ? 0 : slowSway * 0.18,
+          9,
+          dt
+        );
+        bodyGroup.rotation.z = THREE.MathUtils.damp(
+          bodyGroup.rotation.z,
+          isReturning ? 0 : beat * 0.09,
+          9,
+          dt
+        );
+        bodyGroup.position.y = THREE.MathUtils.damp(
+          bodyGroup.position.y,
+          isReturning ? 0 : Math.abs(beat) * 0.08,
+          12,
+          dt
+        );
+
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(
+          leftLegPivot.rotation.x,
+          isReturning ? 0 : beat * 0.18,
+          11,
+          dt
+        );
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(
+          rightLegPivot.rotation.x,
+          isReturning ? 0 : -beat * 0.18,
+          11,
+          dt
+        );
+
+        headGroup.rotation.x = THREE.MathUtils.damp(
+          headGroup.rotation.x,
+          isReturning ? 0 : Math.abs(beat) * 0.05,
+          10,
+          dt
+        );
+        headGroup.rotation.y = THREE.MathUtils.damp(
+          headGroup.rotation.y,
+          isReturning ? 0 : slowSway * 0.14,
+          9,
+          dt
+        );
+        headGroup.rotation.z = THREE.MathUtils.damp(
+          headGroup.rotation.z,
+          isReturning ? 0 : -beat * 0.1,
+          9,
+          dt
+        );
+      }
     } else {
       leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0, 10, dt);
       rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, 0, 10, dt);
       leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, 0, 10, dt);
-      rightArmPivot.rotation.x = THREE.MathUtils.damp(
-        rightArmPivot.rotation.x,
-        scholarBook.visible ? -0.28 : 0,
-        10,
-        dt
-      );
+      rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, restRightArmX, 10, dt);
       bodyGroup.position.y = THREE.MathUtils.damp(
         bodyGroup.position.y,
         Math.sin(idlePhase * 0.65) * 0.025,
@@ -1178,16 +1580,34 @@ export function createRobloxAvatar(
         dt
       );
       headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, 0, 8, dt);
+      dampSecondaryAxesToNeutral(dt, 9);
     }
 
     if (scholarCap.visible) {
       tasselPivot.rotation.z = Math.sin(idlePhase * 1.1) * 0.08 + (speedRatio > 0.05 ? 0.14 : 0);
     }
 
+    if (carryBadgeSprite && carryBadgeSprite.visible) {
+      carryBadgeSprite.position.y = 3.22 + Math.sin(idlePhase * 1.4) * 0.08;
+    }
+
+    const effectiveHeight = Math.max(0, yHeight + Math.max(0, bodyGroup.position.y));
     shadowDisc.position.y = -yHeight + 0.025;
-    const shadowScale = Math.max(0.45, 1 - yHeight * 0.14);
+    const shadowScale = Math.max(0.45, 1 - effectiveHeight * 0.14);
     shadowDisc.scale.set(shadowScale, shadowScale, 1);
-    shadowMat.opacity = Math.max(0.18, 0.62 - yHeight * 0.1);
+    shadowMat.opacity = Math.max(0.18, 0.62 - effectiveHeight * 0.1);
+  };
+
+  const setHeldTrash = (kind: TrashKind | null) => {
+    heldTrashKind = kind;
+    heldTrashGroup.visible = kind !== null;
+    heldPaperGroup.visible = kind === 'paper';
+    heldJuiceGroup.visible = kind === 'juice';
+    heldBottleGroup.visible = kind === 'bottle';
+    if (carryBadgeSprite) {
+      carryBadgeSprite.visible = kind !== null;
+    }
+    syncAppearance();
   };
 
   const setShirtColor = (hex: string) => {
@@ -1242,6 +1662,9 @@ export function createRobloxAvatar(
     setShirtColor,
     setGender,
     applyAccessories,
+    setHeldTrash,
+    triggerEmote,
+    isEmoteActive,
     updateAnimation,
     dispose,
   };

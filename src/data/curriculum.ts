@@ -350,12 +350,371 @@ export function getZonesForFloor(floor: FloorNumber): WorldZone[] {
 
 // --- Mini-game Round Schemas ---
 
+export type MathGameType =
+  | 'room_sort'
+  | 'croc_compare'
+  | 'tangram'
+  | 'fruit_basket'
+  | 'scale_balance'
+  | 'two_pockets'
+  | 'train_tens'
+  | 'magic_lock'
+  | 'bridge_tens'
+  | 'bank_tens'
+  | 'tower_blocks'
+  | 'magic_chain';
+
+export type MathRoundKind = MathGameType | 'moving_blocks';
+
+export interface RoomSortZone {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface RoomSortData {
+  itemEmoji: string;
+  itemLabel: string;
+  targetZoneId: string;
+  zones: RoomSortZone[];
+}
+
+export interface CrocCompareData {
+  leftCount: number;
+  rightCount: number;
+  itemEmoji?: string;
+  itemLabel?: string;
+  /** Group every N items into a bundle box (e.g., 10 for numbers > 12) */
+  bundleSize?: number;
+}
+
+export type TangramShapeId = 'triangle' | 'square' | 'circle' | 'rectangle';
+
+export interface TangramData {
+  scene: 'house_roof' | 'house_window' | 'car_wheel' | 'boat_sail';
+  targetShape: TangramShapeId;
+  targetLabel: string;
+}
+
+export interface ScaleBalanceData {
+  /** Known weight on the left pan (e.g., 8 shiny coins) */
+  leftTotal: number;
+  /** Known visible coins on the right pan beside the "?" mystery chest (e.g., 3 coins) */
+  rightKnown: number;
+  /** Hidden value needed in the "?" chest to balance the scale (leftTotal - rightKnown) */
+  unknownValue: number;
+  /** Kid-friendly equation shown above the scale, e.g. "? + 3 = 8" */
+  equationLabel?: string;
+  itemLabel?: string;
+}
+
+export interface FruitBasketData {
+  mode: 'add' | 'subtract';
+  /** In 'add': red fruits (a) + yellow fruits (b). In 'subtract': initial fruits (a) minus taken fruits (b). */
+  a: number;
+  b: number;
+  subtractEffect?: 'bird' | 'wind';
+}
+
+export interface TwoPocketsData {
+  leftCount: number;
+  rightCount: number;
+  itemEmoji?: string;
+  itemLabel?: string;
+}
+
+export interface TrainTensData {
+  targetNumber: number; // 11..20
+}
+
+export interface MagicLockData {
+  /** Outer number before/after bracket */
+  outerNum: number;
+  outerOp: '+' | '-';
+  /** Whether the locked bracket comes first: "(a op b) outerOp outerNum" vs "outerNum outerOp (a op b)" */
+  bracketFirst?: boolean;
+  innerA: number;
+  innerB: number;
+  innerOp: '+' | '-';
+  innerResult: number;
+  innerOptions: string[];
+  finalResult: number;
+}
+
+export interface BridgeTensData {
+  mode: 'add' | 'subtract';
+  startNum: number; // e.g., 8 for 8+5, or 13 for 13-5
+  deltaNum: number; // e.g., 5
+  step1Target: number; // e.g., 2 (to reach 10 from 8) or 3 (to reach 10 from 13)
+  step1Options: string[];
+  step2Remainder: number; // e.g., 3 (5-2) or 2 (5-3)
+  finalResult: number;
+}
+
+export interface BankTensData {
+  itemEmoji: string;
+  itemName: string;
+  targetPrice: number; // multiple of 10: 20, 30, 40, 50, 60, 70, 80
+}
+
+export interface TowerBlocksData {
+  mode: 'add' | 'subtract';
+  startNum: number; // e.g., 24
+  deltaNum: number; // e.g., 12
+  targetNum: number; // e.g., 36
+}
+
+export interface MagicChainData {
+  nums: [number, number, number]; // e.g., [7, 5, 3]
+  pairIndices: [number, number]; // indices that sum to 10, e.g., [0, 2]
+  remainingIndex: number; // e.g., 1
+  finalResult: number; // e.g., 15
+}
+
 export interface MathRound {
+  kind?: MathRoundKind;
   prompt: string;
   options: string[];
   correctAnswer: string;
   hint: string;
   timeLimitSec: number;
+  roomData?: RoomSortData;
+  crocData?: CrocCompareData;
+  tangramData?: TangramData;
+  scaleData?: ScaleBalanceData;
+  fruitData?: FruitBasketData;
+  pocketsData?: TwoPocketsData;
+  trainData?: TrainTensData;
+  lockData?: MagicLockData;
+  bridgeData?: BridgeTensData;
+  bankData?: BankTensData;
+  towerData?: TowerBlocksData;
+  chainData?: MagicChainData;
+}
+
+export type EnglishGameType =
+  | 'greetings_club'
+  | 'rainbow_paint'
+  | 'backpack_pack'
+  | 'toy_box'
+  | 'family_album'
+  | 'house_builder'
+  | 'face_maker'
+  | 'picnic_basket'
+  | 'superhero_actions'
+  | 'safari_animals';
+
+export interface GreetingsClubData {
+  mode: 'greeting_choice' | 'name_intro';
+  scene: 'morning' | 'intro' | 'sunset' | 'gift';
+  characterPromptEn: string;
+  options?: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    isCorrect: boolean;
+  }[];
+  nameTemplateEn?: string;
+}
+
+export interface RainbowPaintData {
+  bands: {
+    number: number;
+    numberWord: string;
+    colorId: string;
+    colorNameEn: string;
+    colorNameUz: string;
+    hex: string;
+    speakText: string;
+  }[];
+  palette: {
+    colorId: string;
+    colorNameEn: string;
+    colorNameUz: string;
+    hex: string;
+    speakText: string;
+  }[];
+}
+
+export interface BackpackPackData {
+  targets: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    commandEn: string;
+  }[];
+  distractors: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+}
+
+export interface ToyBoxData {
+  toyId: 'ball' | 'car' | 'robot' | 'teddy';
+  toyEmoji: string;
+  answerEn: string;
+  answerUz: string;
+  actionCaptionEn: string;
+  options: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    isCorrect: boolean;
+  }[];
+}
+
+export interface FamilyAlbumData {
+  frames: {
+    id: string;
+    roleEn: string;
+    roleUz: string;
+    emoji: string;
+    speakText: string;
+    sentenceEn: string;
+  }[];
+  extraCards?: {
+    id: string;
+    roleEn: string;
+    roleUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+}
+
+export interface HouseBuilderData {
+  slots: {
+    id: 'roof' | 'window' | 'clock' | 'door' | 'lamp' | 'bed' | 'table' | 'sun' | 'tree';
+    shapeEn: string;
+    itemEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    commandEn: string;
+  }[];
+  extraPieces: {
+    id: string;
+    shapeEn: string;
+    itemEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+}
+
+export interface FaceMakerData {
+  mode: 'build_face' | 'senses_tap' | 'wash_hands';
+  parts?: {
+    id: 'eyes' | 'nose' | 'mouth' | 'ears' | 'hair';
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    commandEn: string;
+  }[];
+  extraParts?: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+  senseTargets?: {
+    id: 'eyes' | 'ears';
+    commandEn: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+}
+
+export interface PicnicBasketData {
+  characterQuoteEn: string;
+  characterQuoteUz: string;
+  foods: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    liked: boolean;
+  }[];
+}
+
+export interface SuperheroActionsData {
+  obstacles: {
+    id: string;
+    obstacleEmoji: string;
+    obstacleLabelUz: string;
+    actionId: string;
+    actionEn: string;
+    actionUz: string;
+    actionEmoji: string;
+    sentenceEn: string;
+    speakText: string;
+  }[];
+  actionButtons: {
+    id: string;
+    labelEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+  }[];
+}
+
+export interface SafariAnimalsData {
+  targetId: string;
+  targetPhraseEn: string;
+  targetPhraseUz: string;
+  soundType: 'elephant' | 'lion' | 'cat' | 'dog' | 'bird' | 'fish';
+  animals: {
+    id: string;
+    labelEn: string;
+    adjectiveEn: string;
+    labelUz: string;
+    emoji: string;
+    speakText: string;
+    xPct: number;
+    yPct: number;
+    sizeClass: string;
+    soundType: 'elephant' | 'lion' | 'cat' | 'dog' | 'bird' | 'fish';
+  }[];
+}
+
+export interface EnglishInteractiveRound {
+  kind: EnglishGameType;
+  instruction: string;
+  /** Clean English speech prompt for Web Speech API */
+  speakText: string;
+  /** Clean Uzbek phonetic cue for speakUzbek */
+  speakUzbek?: string;
+  translation: string;
+  praiseText: string;
+  /** Clean English praise without emojis */
+  praiseSpeakText?: string;
+  teacherHint?: string;
+  greetingsData?: GreetingsClubData;
+  rainbowData?: RainbowPaintData;
+  backpackData?: BackpackPackData;
+  toyBoxData?: ToyBoxData;
+  familyData?: FamilyAlbumData;
+  houseData?: HouseBuilderData;
+  faceData?: FaceMakerData;
+  picnicData?: PicnicBasketData;
+  superheroData?: SuperheroActionsData;
+  safariData?: SafariAnimalsData;
 }
 
 export interface EnglishMatchRound {
@@ -373,7 +732,7 @@ export interface EnglishFillRound {
   correctAnswer: string;
 }
 
-export type EnglishRound = EnglishMatchRound | EnglishFillRound;
+export type EnglishRound = EnglishMatchRound | EnglishFillRound | EnglishInteractiveRound;
 
 export interface CsOrderRound {
   kind: 'order';
@@ -391,21 +750,225 @@ export interface CsChoiceRound {
   explanation: string;
 }
 
-export type CsRound = CsOrderRound | CsChoiceRound;
+export type CsGameType =
+  | 'senses_sorter'
+  | 'taste_conveyor'
+  | 'time_machine'
+  | 'chef_algo'
+  | 'cycle_carousel'
+  | 'drone_flight'
+  | 'short_path'
+  | 'robot_maze'
+  | 'pc_builder'
+  | 'logic_detective';
+
+export interface SensesSorterData {
+  mode: 'audio' | 'visual';
+  clueEmoji: string;
+  clueTitle: string;
+  clueSubtitle: string;
+  soundKind?: 'bird' | 'bell' | 'melody';
+  visualKind?: 'rainbow' | 'shapes';
+  targetSense: 'ear' | 'eye';
+}
+
+export interface TasteConveyorData {
+  itemEmoji: string;
+  itemLabel: string;
+  traitBadge: string;
+  targetSense: 'tongue' | 'nose' | 'hand';
+}
+
+export interface TimeMachineData {
+  beforeEmoji: string;
+  beforeLabel: string;
+  machineEmoji: string;
+  machineLabel: string;
+  afterChoices: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface ChefAlgoData {
+  recipeTitle: string;
+  resultEmoji: string;
+  resultLabel: string;
+  steps: { id: string; emoji: string; label: string }[];
+}
+
+export interface CycleCarouselData {
+  cycleTitle: string;
+  steps: { id: string; emoji: string; label: string }[];
+}
+
+export interface DroneFlightData {
+  gridSize: number;
+  start: { x: number; y: number };
+  target: { x: number; y: number };
+  missionText: string;
+}
+
+export interface ShortPathData {
+  pathASteps: { x: number; y: number }[];
+  pathBSteps: { x: number; y: number }[];
+  correctPath: 'A' | 'B';
+}
+
+export interface RobotMazeData {
+  gridSize: number;
+  start: { x: number; y: number; dir: 'up' | 'right' | 'down' | 'left' };
+  flag: { x: number; y: number };
+  walls: { x: number; y: number }[];
+  hintFormula: string;
+}
+
+export interface PcBuilderData {
+  mode: 'assemble_all' | 'find_part';
+  targetPart?: 'monitor' | 'cpu' | 'keyboard' | 'mouse';
+}
+
+export interface LogicDetectiveData {
+  illustrationEmoji: string;
+  statement: string;
+  isTrue: boolean;
+}
+
+export interface CsInteractiveRound {
+  kind: CsGameType;
+  prompt: string;
+  explanation: string;
+  teacherHint?: string;
+  sensesData?: SensesSorterData;
+  conveyorData?: TasteConveyorData;
+  timeData?: TimeMachineData;
+  chefData?: ChefAlgoData;
+  carouselData?: CycleCarouselData;
+  droneData?: DroneFlightData;
+  shortPathData?: ShortPathData;
+  mazeData?: RobotMazeData;
+  pcData?: PcBuilderData;
+  logicData?: LogicDetectiveData;
+}
+
+export type CsRound = CsOrderRound | CsChoiceRound | CsInteractiveRound;
+
+export type ScienceGameType =
+  | 'flag_map'
+  | 'plant_lab'
+  | 'animal_homes'
+  | 'seasons_wheel'
+  | 'water_states'
+  | 'bread_chain'
+  | 'safety_home'
+  | 'traffic_light'
+  | 'clean_hands'
+  | 'eco_patrol';
+
+export interface FlagMapData {
+  mode: 'flag_builder' | 'school_map' | 'symbol_pick';
+  /** For school_map: stop label on neighborhood map */
+  mapScene?: 'neighbor' | 'school_gate' | 'uzbekistan_map';
+  npcLabel?: string;
+  npcEmoji?: string;
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface PlantLabData {
+  mode: 'grow_seed' | 'bloom_flower' | 'save_wilted' | 'nature_spot';
+  initialStage: 'seed' | 'sprout' | 'wilted';
+  /** Required tool actions in any or specific order */
+  requiredTools?: ('water' | 'sun')[];
+  /** For nature_spot mode (forest vs meadow / root quiz visually) */
+  spotOptions?: { id: string; emoji: string; label: string; subtitle: string; isCorrect: boolean }[];
+}
+
+export interface AnimalHomesData {
+  animalEmoji: string;
+  animalName: string;
+  targetHabitatId: 'nest' | 'pond' | 'forest' | 'house';
+}
+
+export interface SeasonsWheelData {
+  itemEmoji: string;
+  itemLabel: string;
+  targetSeason: 'spring' | 'summer' | 'autumn' | 'winter';
+}
+
+export interface WaterStatesData {
+  startTemp: number; // -10 (ice), 22 (liquid), 100 (steam)
+  targetState: 'ice' | 'liquid' | 'steam';
+  taskHint: string;
+}
+
+export interface BreadChainData {
+  mode: 'order_chain' | 'etiquette_pick';
+  /** Ordered correct steps for order_chain */
+  steps?: { id: string; emoji: string; label: string }[];
+  /** Visual choice for etiquette_pick */
+  etiquetteChoices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface SafetyHomeData {
+  mode: 'sort_hazard' | 'dial_phone';
+  /** For sort_hazard */
+  itemEmoji?: string;
+  itemLabel?: string;
+  isDangerous?: boolean;
+  /** For dial_phone */
+  emergencyEmoji?: string;
+  emergencyLabel?: string;
+  targetNumber?: string; // e.g., '101', '103'
+}
+
+export interface TrafficLightData {
+  mode: 'signal_pick' | 'transport_lane';
+  /** For signal_pick */
+  targetLight?: 'red' | 'yellow' | 'green';
+  scenarioLabel?: string;
+  /** For transport_lane */
+  vehicleEmoji?: string;
+  vehicleLabel?: string;
+  targetLane?: 'air' | 'water' | 'land';
+}
+
+export interface CleanHandsData {
+  mode: 'wash_hands' | 'brush_teeth' | 'healthy_plate';
+  /** For healthy_plate: items to pick/avoid */
+  foods?: { id: string; emoji: string; label: string; healthy: boolean }[];
+}
+
+export interface EcoPatrolData {
+  mode: 'recycle_sort' | 'plant_sapling';
+  /** For recycle_sort */
+  trashEmoji?: string;
+  trashLabel?: string;
+  targetBin?: 'paper' | 'plastic' | 'glass';
+}
 
 export interface ScienceRound {
-  kind: 'true_false' | 'quiz';
+  kind: 'true_false' | 'quiz' | ScienceGameType;
   icon: 'sun' | 'leaf' | 'atom' | 'droplet' | 'globe' | 'zap' | 'flame' | 'heart';
   statement: string;
   options: string[]; // For true_false: ["To'g'ri", "Noto'g'ri"]
   correctAnswer: string;
   fact: string;
+  teacherHint?: string;
+  flagData?: FlagMapData;
+  plantData?: PlantLabData;
+  animalData?: AnimalHomesData;
+  seasonData?: SeasonsWheelData;
+  waterData?: WaterStatesData;
+  breadData?: BreadChainData;
+  safetyData?: SafetyHomeData;
+  trafficData?: TrafficLightData;
+  cleanData?: CleanHandsData;
+  ecoData?: EcoPatrolData;
 }
 
 export interface AlifbeCard {
   letter: string;
   emoji: string;
   word: string;
+  /** Clean Uzbek phonetic pronunciation cue (e.g. "A, anor") */
+  speakUzbek?: string;
 }
 
 export interface AlifbeFirstLetterRound {
@@ -431,18 +994,134 @@ export interface AlifbeLetterMatchRound {
   pairs: { letter: string; emoji: string; word: string }[];
 }
 
+export type AlifbeGameType =
+  | 'balloon_pop'
+  | 'basket_sort'
+  | 'syllable_wheel'
+  | 'train_builder'
+  | 'missing_letter'
+  | 'flower_garden'
+  | 'twin_letters'
+  | 'golden_reader';
+
+export interface BalloonPopData {
+  targetLetter: string;
+  singSound: string;
+  speakUzbek?: string;
+  revealEmoji: string;
+  revealWord: string;
+  balloons: { id: string; letter: string; colorHex: string; xPct: number; delay: number }[];
+}
+
+export interface BasketSortData {
+  baskets: { letter: string; colorHex: string; speakUzbek?: string }[];
+  items: { id: string; emoji: string; word: string; targetLetter: string; speakUzbek?: string }[];
+}
+
+export interface SyllableWheelData {
+  leftChoices: string[];
+  rightChoices: string[];
+  targetLeft: string;
+  targetRight: string;
+  syllableResult: string;
+  /** Optional 2nd step suffix to complete a full word (e.g., NO + N = NON) */
+  extraLetterChoices?: string[];
+  targetExtra?: string;
+  finalWord: string;
+  finalEmoji: string;
+  finalCaption: string;
+  speakUzbek?: string;
+}
+
+export interface TrainBuilderData {
+  emoji: string;
+  word: string;
+  targetSyllables: string[];
+  deskSyllables: string[];
+  speakUzbek?: string;
+}
+
+export interface MissingLetterData {
+  emoji: string;
+  word: string;
+  /** Array of characters/digraphs with '_' for the missing slot */
+  letters: string[];
+  missingLetter: string;
+  options: string[];
+  speakUzbek?: string;
+}
+
+export interface FlowerGardenData {
+  emoji: string;
+  word: string;
+  /** Letters in exact reading order (also rendered around the flower petals) */
+  letters: string[];
+  petalColor: string;
+  speakUzbek?: string;
+}
+
+export interface TwinLettersData {
+  leftLetter: string;
+  rightLetter: string;
+  mergedLetter: string;
+  phoneticSound: string;
+  speakUzbek?: string;
+  word: string;
+  emoji: string;
+  distractorPairs?: { id: string; left: string; right: string; label: string }[];
+}
+
+export interface GoldenReaderData {
+  sentence: string;
+  speakUzbek?: string;
+  emoji: string;
+  subtitle: string;
+  isFinalMedalRound?: boolean;
+  /** Picture verification choice after karaoke reading */
+  pictureChoices: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface AlifbeInteractiveRound {
+  kind: AlifbeGameType;
+  spokenPrompt: string;
+  /** Clean Uzbek phonetic prompt for speakUzbek */
+  speakUzbek?: string;
+  praiseText: string;
+  /** Clean Uzbek phonetic praise cue */
+  praiseSpeakUzbek?: string;
+  teacherHint?: string;
+  balloonData?: BalloonPopData;
+  basketData?: BasketSortData;
+  wheelData?: SyllableWheelData;
+  trainData?: TrainBuilderData;
+  missingData?: MissingLetterData;
+  flowerData?: FlowerGardenData;
+  twinData?: TwinLettersData;
+  readerData?: GoldenReaderData;
+}
+
 export type AlifbeRound =
   | AlifbeFirstLetterRound
   | AlifbeBuildWordRound
-  | AlifbeLetterMatchRound;
+  | AlifbeLetterMatchRound
+  | AlifbeInteractiveRound;
 
 export interface LessonPlan {
   subject: SubjectId;
   tier: DifficultyTier;
   grade?: number;
+  gameType?: MathGameType;
+  scienceGameType?: ScienceGameType;
+  csGameType?: CsGameType;
+  englishGameType?: EnglishGameType;
+  alifbeGameType?: AlifbeGameType;
   topicTitle: string;
   ruleTitle: string;
   explanation: string;
+  /** Clean English audio summary for Web Speech API */
+  speakText?: string;
+  /** Clean Uzbek phonetic audio summary for speakUzbek */
+  speakUzbek?: string;
   formulaOrRule: string;
   exampleProblem: string;
   exampleSolution: string;

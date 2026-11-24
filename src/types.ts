@@ -59,6 +59,26 @@ export interface EquippedAccessories {
   book?: 'scholar_book';
 }
 
+export type AwardCategoryId = 'cleanliness' | 'greeting' | 'math' | 'language';
+export type AwardTier = 'bronze' | 'silver' | 'gold';
+
+export interface PlayerStats {
+  trashCollected: number;
+  greetingsGiven: number;
+  mathCompleted: number;
+  languageCompleted: number;
+}
+
+export interface AwardDefinition {
+  id: string;
+  category: AwardCategoryId;
+  tier: AwardTier;
+  title: string;
+  targetCount: number;
+  rewardCoins: number;
+  unitLabel: string;
+}
+
 export interface PlayerProfile {
   name: string;
   gender: PlayerGender;
@@ -70,6 +90,8 @@ export interface PlayerProfile {
   completedLessons: number;
   subjectCompletions: Record<SubjectId, number>;
   activeSubjectIndex: number; // 0..3 cycling through SUBJECT_ORDER
+  stats: PlayerStats;
+  unlockedAwards: string[];
 }
 
 export interface ShirtColorOption {
@@ -106,4 +128,38 @@ export interface VirtualControlsState {
   left: boolean;
   right: boolean;
   jump: boolean;
+}
+
+export type AvatarEmote = 'salom' | 'qarsak' | 'quvonch' | 'milliy_raqs';
+
+export interface EmoteRequest {
+  emote: AvatarEmote;
+  durationSec?: number;
+  token: number;
+}
+
+export interface TeacherGreetingPrompt {
+  teacherId: string;
+  teacherName: string;
+  timeRemainingSec: number;
+  totalTimeSec: number;
+}
+
+export type TrashKind = 'paper' | 'juice' | 'bottle';
+
+export interface TrashPickupPrompt {
+  mode: 'pickup' | 'carrying' | 'dropoff';
+  trashId: string;
+  trashKind: TrashKind;
+  trashLabel: string;
+  timeRemainingSec: number;
+  totalTimeSec: number;
+}
+
+export interface EthicsFeedbackToast {
+  id: number;
+  kind: 'reward' | 'penalty';
+  deltaCoins: number;
+  title: string;
+  subtitle: string;
 }

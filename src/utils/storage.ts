@@ -2,11 +2,13 @@ import {
   EquippedAccessories,
   PlayerGender,
   PlayerProfile,
+  PlayerStats,
   ShirtColorOption,
   ShopItem,
   ShopItemId,
   SubjectId,
 } from '../types';
+import { VALID_AWARD_IDS } from '../data/awards';
 
 export const SUBJECT_ORDER: SubjectId[] = ['math', 'english', 'cs', 'science'];
 export const ALL_SUBJECTS: SubjectId[] = ['alifbe', 'math', 'english', 'cs', 'science'];
@@ -286,6 +288,13 @@ function sanitizeEquipped(raw: unknown, gender: PlayerGender): EquippedAccessori
 
 const STORAGE_KEY = 'bilimlar_maktabi_3d_profile_v1';
 
+export const DEFAULT_STATS: PlayerStats = {
+  trashCollected: 0,
+  greetingsGiven: 0,
+  mathCompleted: 0,
+  languageCompleted: 0,
+};
+
 export const DEFAULT_PROFILE: PlayerProfile = {
   name: '',
   gender: 'boy',
@@ -303,7 +312,13 @@ export const DEFAULT_PROFILE: PlayerProfile = {
     science: 0,
   },
   activeSubjectIndex: 0,
+  stats: { ...DEFAULT_STATS },
+  unlockedAwards: [],
 };
+
+function sanitizeNonNegInt(val: unknown): number {
+  return typeof val === 'number' && Number.isFinite(val) && val > 0 ? Math.floor(val) : 0;
+}
 
 export function loadProfile(): PlayerProfile | null {
   try {
@@ -321,6 +336,24 @@ export function loadProfile(): PlayerProfile | null {
       : [];
 
     const cleanEquipped = sanitizeEquipped(parsed.equipped, cleanGender);
+
+    const rawStats = parsed.stats as Partial<PlayerStats> | undefined;
+    const cleanStats: PlayerStats = {
+      trashCollected: sanitizeNonNegInt(rawStats?.trashCollected),
+      greetingsGiven: sanitizeNonNegInt(rawStats?.greetingsGiven),
+      mathCompleted: sanitizeNonNegInt(rawStats?.mathCompleted),
+      languageCompleted: sanitizeNonNegInt(rawStats?.languageCompleted),
+    };
+
+    const cleanUnlockedAwards: string[] = Array.isArray(parsed.unlockedAwards)
+      ? Array.from(
+          new Set(
+            parsed.unlockedAwards.filter(
+              (id): id is string => typeof id === 'string' && VALID_AWARD_IDS.has(id)
+            )
+          )
+        )
+      : [];
 
     return {
       name: typeof parsed.name === 'string' ? parsed.name : '',
@@ -349,6 +382,8 @@ export function loadProfile(): PlayerProfile | null {
         typeof parsed.activeSubjectIndex === 'number'
           ? Math.max(0, Math.floor(parsed.activeSubjectIndex))
           : 0,
+      stats: cleanStats,
+      unlockedAwards: cleanUnlockedAwards,
     };
   } catch {
     return null;

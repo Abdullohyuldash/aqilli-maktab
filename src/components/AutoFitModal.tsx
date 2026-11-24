@@ -30,9 +30,9 @@ export const AutoFitModal: React.FC<AutoFitModalProps> = ({
     if (!el) return;
 
     // offsetWidth / offsetHeight return the unscaled natural layout dimensions
-    // unaffected by CSS transform: scale(...)
-    const contentWidth = Math.max(el.offsetWidth, el.scrollWidth);
-    const contentHeight = Math.max(el.offsetHeight, el.scrollHeight);
+    // unaffected by CSS transform: scale(...) or inner button shake/scale animations
+    const contentWidth = el.offsetWidth;
+    const contentHeight = el.offsetHeight;
 
     if (contentWidth <= 0 || contentHeight <= 0) return;
 

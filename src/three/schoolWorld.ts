@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FloorNumber, SubjectId, WorldZone } from '../types';
+import { FloorNumber, SubjectId, TrashKind, WorldZone } from '../types';
 import { ELEVATOR_TRIGGER, FLOOR_META, getZonesForFloor, SUBJECT_META } from '../data/curriculum';
 import {
   createAwningTexture,
@@ -19,17 +19,38 @@ export interface ColliderBox {
   maxZ: number;
 }
 
+export interface TrashBinHandle {
+  id: string;
+  x: number;
+  z: number;
+}
+
+export interface ActiveFloorTrash {
+  id: string;
+  kind: TrashKind;
+  label: string;
+  x: number;
+  z: number;
+  lifetimeRemaining: number;
+  totalLifetime: number;
+}
+
 export interface SchoolWorldHandle {
   floor: FloorNumber;
   group: THREE.Group;
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   colliders: ColliderBox[];
+  trashBins: TrashBinHandle[];
+  getActiveTrash: () => ActiveFloorTrash | null;
+  spawnRandomTrash: (playerPos?: { x: number; z: number }) => ActiveFloorTrash;
+  clearActiveTrash: () => void;
   updateWorld: (
     dt: number,
     elapsed: number,
     activeSubject: SubjectId,
     playerPos: THREE.Vector3,
-    npcDoorRequests?: Partial<Record<SubjectId, number>>
+    npcDoorRequests?: Partial<Record<SubjectId, number>>,
+    isHoldingTrash?: boolean
   ) => void;
   dispose: () => void;
 }
@@ -1058,6 +1079,357 @@ export function buildSchoolWorld(
   });
 
   // =========================================================================
+  // 3D CORRIDOR TRASH BINS (Axlat qutilari — present on EVERY floor!)
+  // =========================================================================
+  const binBodyMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0x059669, roughness: 0.42, metalness: 0.25 })
+  );
+  const binSteelMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.25, metalness: 0.72 })
+  );
+  const binInnerMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9, metalness: 0.05 })
+  );
+  const binBadgeMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xecfdf5, roughness: 0.4, metalness: 0.05 })
+  );
+  const binEcoStripeMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.35, metalness: 0.1 })
+  );
+
+  interface TrashBinVisual {
+    handle: TrashBinHandle;
+    beaconGroup: THREE.Group;
+    beamMat: THREE.MeshBasicMaterial;
+    arrowMesh: THREE.Mesh;
+    haloRing: THREE.Mesh;
+    haloMat: THREE.MeshBasicMaterial;
+  }
+
+  const trashBins: TrashBinHandle[] = [];
+  const trashBinVisuals: TrashBinVisual[] = [];
+
+  const binArrowMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.95,
+      roughness: 0.18,
+      metalness: 0.2,
+    })
+  );
+
+  const addTrashBin = (id: string, x: number, z: number, facingYaw = 0) => {
+    const bin = new THREE.Group();
+    bin.position.set(x, 0, z);
+    bin.rotation.y = facingYaw;
+
+    // 1. Grounded metallic foot ring
+    const foot = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.4, 0.44, 0.1, 14)), binSteelMat);
+    foot.position.y = 0.05;
+    bin.add(foot);
+
+    // 2. Tapered emerald bin body
+    const body = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.46, 0.38, 1.02, 14)), binBodyMat);
+    body.position.y = 0.6;
+    body.castShadow = castShadow;
+    body.receiveShadow = true;
+    bin.add(body);
+
+    // 3. Brushed steel top rim
+    const rim = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.45, 0.055, 8, 18)), binSteelMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 1.12;
+    bin.add(rim);
+
+    // 4. Dark interior opening
+    const cavity = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.39, 0.39, 0.04, 14)), binInnerMat);
+    cavity.position.y = 1.1;
+    bin.add(cavity);
+
+    // 5. Front cleanliness emblem plate
+    const plate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.36, 0.32, 0.05)), binBadgeMat);
+    plate.position.set(0, 0.66, 0.43);
+    bin.add(plate);
+
+    const stripe = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.22, 0.14, 0.06)), binEcoStripeMat);
+    stripe.position.set(0, 0.66, 0.44);
+    bin.add(stripe);
+
+    // 6. Nearest-bin guiding light beam + downward arrow marker (visible when player holds trash)
+    const beaconGroup = new THREE.Group();
+    beaconGroup.visible = false;
+
+    const beamMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0x34d399,
+        transparent: true,
+        opacity: 0.24,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+    );
+    const beamMesh = new THREE.Mesh(
+      trackGeo(new THREE.CylinderGeometry(0.28, 0.52, 3.6, 16, 1, true)),
+      beamMat
+    );
+    beamMesh.position.y = 2.05;
+    beaconGroup.add(beamMesh);
+
+    const arrowMesh = new THREE.Mesh(trackGeo(new THREE.ConeGeometry(0.34, 0.64, 4)), binArrowMat);
+    arrowMesh.rotation.x = Math.PI;
+    arrowMesh.position.y = 2.15;
+    beaconGroup.add(arrowMesh);
+
+    const haloMat = trackMat(
+      new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      })
+    );
+    const haloRing = new THREE.Mesh(trackGeo(new THREE.RingGeometry(0.56, 0.82, 24)), haloMat);
+    haloRing.rotation.x = -Math.PI / 2;
+    haloRing.position.y = 0.032;
+    beaconGroup.add(haloRing);
+
+    bin.add(beaconGroup);
+
+    group.add(bin);
+    colliders.push({ minX: x - 0.62, maxX: x + 0.62, minZ: z - 0.62, maxZ: z + 0.62 });
+
+    const handle: TrashBinHandle = { id, x, z };
+    trashBins.push(handle);
+    trashBinVisuals.push({ handle, beaconGroup, beamMat, arrowMesh, haloRing, haloMat });
+  };
+
+  addTrashBin(`floor${floor}_bin_sw`, -9.6, 11.0, Math.PI);
+  addTrashBin(`floor${floor}_bin_se`, 9.6, 11.0, Math.PI);
+  addTrashBin(`floor${floor}_bin_n`, -3.6, -12.1, 0);
+
+  // =========================================================================
+  // SINGLE POOLED 3D INTERACTIVE FLOOR LITTER (1 active item at a time!)
+  // =========================================================================
+  const paperLightMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.92, metalness: 0.02 })
+  );
+  const paperShadeMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.88, metalness: 0.02 })
+  );
+  const juiceBodyMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.48, metalness: 0.04 })
+  );
+  const juiceBandMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.55, metalness: 0.02 })
+  );
+  const strawMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.05 })
+  );
+  const bottleBodyMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: 0x7dd3fc,
+      roughness: 0.18,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.86,
+    })
+  );
+  const bottleCapMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.32, metalness: 0.15 })
+  );
+  const bottleLabelMat = trackMat(
+    new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.45, metalness: 0.05 })
+  );
+
+  const trashSpawnSpotsByFloor: Record<FloorNumber, { x: number; z: number }[]> = {
+    1: [
+      { x: -5.4, z: 5.0 },
+      { x: 5.2, z: 4.5 },
+      { x: -4.6, z: -4.6 },
+      { x: 4.4, z: -3.2 },
+      { x: 0.6, z: 2.2 },
+      { x: -2.2, z: 6.4 },
+    ],
+    2: [
+      { x: -5.0, z: 4.8 },
+      { x: 5.4, z: 4.2 },
+      { x: -4.4, z: -4.8 },
+      { x: 4.8, z: -3.4 },
+      { x: -0.6, z: 2.0 },
+      { x: 2.4, z: 6.2 },
+    ],
+    3: [
+      { x: -5.2, z: 4.4 },
+      { x: 5.0, z: 4.6 },
+      { x: -4.6, z: -2.0 },
+      { x: 4.6, z: -2.0 },
+      { x: 0.5, z: 2.4 },
+      { x: -2.4, z: 6.0 },
+    ],
+  };
+
+  const TRASH_KINDS: TrashKind[] = ['paper', 'bottle', 'juice'];
+  const TRASH_LABELS: Record<TrashKind, string> = {
+    paper: "G'ijimlangan qog'oz",
+    juice: "Bo'sh sharbat qutisi",
+    bottle: 'Plastik shisha',
+  };
+
+  const activeTrashRoot = new THREE.Group();
+  activeTrashRoot.visible = false;
+  const activeTrashPropGroup = new THREE.Group();
+  activeTrashRoot.add(activeTrashPropGroup);
+
+  const paperModel = new THREE.Group();
+  {
+    const wad1 = new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.21, 0)), paperLightMat);
+    wad1.position.set(0, 0.18, 0);
+    wad1.scale.set(1.1, 0.82, 0.95);
+    wad1.castShadow = castShadow;
+    paperModel.add(wad1);
+
+    const wad2 = new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.14, 0)), paperShadeMat);
+    wad2.position.set(0.11, 0.12, 0.08);
+    wad2.rotation.set(0.5, 0.9, 0.3);
+    wad2.castShadow = castShadow;
+    paperModel.add(wad2);
+
+    const wad3 = new THREE.Mesh(trackGeo(new THREE.DodecahedronGeometry(0.11, 0)), paperLightMat);
+    wad3.position.set(-0.12, 0.11, -0.06);
+    wad3.rotation.set(0.8, 0.2, 0.6);
+    paperModel.add(wad3);
+  }
+  activeTrashPropGroup.add(paperModel);
+
+  const juiceModel = new THREE.Group();
+  {
+    const carton = new THREE.Group();
+    carton.position.set(0, 0.13, 0);
+    carton.rotation.set(0.22, 0.15, Math.PI / 2 - 0.18);
+
+    const box = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 0.38, 0.16)), juiceBodyMat);
+    box.castShadow = castShadow;
+    carton.add(box);
+
+    const labelBand = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.25, 0.14, 0.17)), juiceBandMat);
+    labelBand.position.y = 0.02;
+    carton.add(labelBand);
+
+    const strawBase = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.018, 0.018, 0.16, 6)), strawMat);
+    strawBase.position.set(0.05, 0.25, 0);
+    carton.add(strawBase);
+
+    const strawTip = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.018, 0.018, 0.1, 6)), strawMat);
+    strawTip.position.set(0.09, 0.32, 0);
+    strawTip.rotation.z = -0.85;
+    carton.add(strawTip);
+
+    juiceModel.add(carton);
+  }
+  activeTrashPropGroup.add(juiceModel);
+
+  const bottleModel = new THREE.Group();
+  {
+    const bottle = new THREE.Group();
+    bottle.position.set(0, 0.12, 0);
+    bottle.rotation.z = Math.PI / 2 - 0.08;
+
+    const body = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.11, 0.11, 0.42, 10)), bottleBodyMat);
+    body.castShadow = castShadow;
+    bottle.add(body);
+
+    const label = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.115, 0.115, 0.15, 10)), bottleLabelMat);
+    bottle.add(label);
+
+    const neck = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.05, 0.11, 0.12, 10)), bottleBodyMat);
+    neck.position.y = 0.27;
+    bottle.add(neck);
+
+    const cap = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.055, 0.055, 0.06, 10)), bottleCapMat);
+    cap.position.y = 0.35;
+    bottle.add(cap);
+
+    bottleModel.add(bottle);
+  }
+  activeTrashPropGroup.add(bottleModel);
+
+  const activeTrashRingMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.58,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+  );
+  const activeTrashRing = new THREE.Mesh(trackGeo(new THREE.RingGeometry(0.38, 0.52, 24)), activeTrashRingMat);
+  activeTrashRing.rotation.x = -Math.PI / 2;
+  activeTrashRing.position.y = 0.028;
+  activeTrashRoot.add(activeTrashRing);
+  group.add(activeTrashRoot);
+
+  let activeTrash: ActiveFloorTrash | null = null;
+  let lastTrashSpotIdx = -1;
+  let trashSpawnSeq = 0;
+
+  const spawnRandomTrash = (playerPos?: { x: number; z: number }): ActiveFloorTrash => {
+    const spots = trashSpawnSpotsByFloor[floor];
+    const candidateIndices: number[] = [];
+    for (let i = 0; i < spots.length; i++) {
+      if (i === lastTrashSpotIdx && spots.length > 1) continue;
+      if (playerPos) {
+        const d = Math.hypot(spots[i].x - playerPos.x, spots[i].z - playerPos.z);
+        if (d < 2.4) continue;
+      }
+      candidateIndices.push(i);
+    }
+    const chosenIdx =
+      candidateIndices.length > 0
+        ? candidateIndices[Math.floor(Math.random() * candidateIndices.length)]
+        : Math.floor(Math.random() * spots.length);
+    lastTrashSpotIdx = chosenIdx;
+
+    const spot = spots[chosenIdx];
+    const kind = TRASH_KINDS[Math.floor(Math.random() * TRASH_KINDS.length)];
+    trashSpawnSeq += 1;
+
+    activeTrash = {
+      id: `floor${floor}_trash_${trashSpawnSeq}`,
+      kind,
+      label: TRASH_LABELS[kind],
+      x: spot.x,
+      z: spot.z,
+      lifetimeRemaining: 20,
+      totalLifetime: 20,
+    };
+
+    activeTrashRoot.position.set(spot.x, 0, spot.z);
+    activeTrashPropGroup.rotation.y = Math.random() * Math.PI * 2;
+    paperModel.visible = kind === 'paper';
+    juiceModel.visible = kind === 'juice';
+    bottleModel.visible = kind === 'bottle';
+    activeTrashRingMat.color.setHex(0xf59e0b);
+    activeTrashRoot.visible = true;
+
+    return activeTrash;
+  };
+
+  const clearActiveTrash = () => {
+    activeTrash = null;
+    activeTrashRoot.visible = false;
+  };
+
+  const getActiveTrash = () => activeTrash;
+
+  // =========================================================================
   // GUIDANCE ARROW BEACON (Points to Active Lesson Room OR to Lift!)
   // =========================================================================
   const guideArrowGroup = new THREE.Group();
@@ -1102,7 +1474,8 @@ export function buildSchoolWorld(
     elapsed: number,
     activeSubject: SubjectId,
     playerPos: THREE.Vector3,
-    npcDoorRequests?: Partial<Record<SubjectId, number>>
+    npcDoorRequests?: Partial<Record<SubjectId, number>>,
+    isHoldingTrash = false
   ) => {
     // Floor 1 shopkeeper & schedule animations (if present on this floor)
     if (npcWaveArm) {
@@ -1217,7 +1590,8 @@ export function buildSchoolWorld(
     const dz = targetZ - playerPos.z;
     const dist = Math.hypot(dx, dz);
 
-    guideArrowGroup.visible = dist > 2.4;
+    // Hide lesson guidance arrow when player carries trash (prevents overlap with overhead carry sprite)
+    guideArrowGroup.visible = !isHoldingTrash && dist > 2.4;
     guideArrowGroup.position.set(
       playerPos.x,
       playerPos.y + 3.25 + Math.sin(elapsed * 4.2) * 0.12,
@@ -1226,6 +1600,50 @@ export function buildSchoolWorld(
     guideArrowGroup.rotation.y = Math.atan2(dx, dz);
     arrowMat.color.copy(_activeColor);
     arrowMat.emissive.copy(_activeColor);
+
+    // Animate the single active floor trash highlight ring
+    if (activeTrash && activeTrashRoot.visible) {
+      const urgent = activeTrash.lifetimeRemaining <= 5;
+      const pulseSpeed = urgent ? 7.5 : 3.4;
+      const pulse = 1 + Math.sin(elapsed * pulseSpeed) * 0.1;
+      activeTrashRing.scale.set(pulse, pulse, 1);
+      activeTrashRingMat.color.setHex(urgent ? 0xf43f5e : 0xf59e0b);
+      activeTrashRingMat.opacity = 0.42 + Math.sin(elapsed * pulseSpeed) * 0.22;
+    }
+
+    // Illuminate ONLY the nearest trash bin beacon when the student is carrying trash
+    if (isHoldingTrash && trashBinVisuals.length > 0) {
+      let nearestIdx = 0;
+      let nearestDistSq = Infinity;
+      for (let i = 0; i < trashBinVisuals.length; i++) {
+        const b = trashBinVisuals[i].handle;
+        const bx = b.x - playerPos.x;
+        const bz = b.z - playerPos.z;
+        const dSq = bx * bx + bz * bz;
+        if (dSq < nearestDistSq) {
+          nearestDistSq = dSq;
+          nearestIdx = i;
+        }
+      }
+
+      for (let i = 0; i < trashBinVisuals.length; i++) {
+        const bv = trashBinVisuals[i];
+        const isNearest = i === nearestIdx;
+        bv.beaconGroup.visible = isNearest;
+        if (isNearest) {
+          bv.arrowMesh.position.y = 2.15 + Math.sin(elapsed * 4.6) * 0.22;
+          bv.arrowMesh.rotation.y = elapsed * 2.4;
+          bv.beamMat.opacity = 0.18 + Math.sin(elapsed * 3.8) * 0.08;
+          const ringScale = 1 + Math.sin(elapsed * 4.2) * 0.1;
+          bv.haloRing.scale.set(ringScale, ringScale, 1);
+          bv.haloMat.opacity = 0.52 + Math.sin(elapsed * 4.2) * 0.22;
+        }
+      }
+    } else {
+      for (let i = 0; i < trashBinVisuals.length; i++) {
+        trashBinVisuals[i].beaconGroup.visible = false;
+      }
+    }
   };
 
   const dispose = () => {
@@ -1244,6 +1662,10 @@ export function buildSchoolWorld(
       maxZ: HALL_D / 2 - 1.0,
     },
     colliders,
+    trashBins,
+    getActiveTrash,
+    spawnRandomTrash,
+    clearActiveTrash,
     updateWorld,
     dispose,
   };

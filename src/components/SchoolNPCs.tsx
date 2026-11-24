@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EquippedAccessories, FloorNumber, SubjectId } from '../types';
+import { EquippedAccessories, FloorNumber, SubjectId, TeacherGreetingPrompt } from '../types';
 import { SUBJECT_META } from '../data/curriculum';
 import { createRobloxAvatar, RobloxAvatarRig } from '../three/avatar';
 
@@ -10,14 +10,26 @@ export type NpcUpdateFn = (
   dt: number,
   elapsed: number,
   activeSubject: SubjectId,
+  playerPos: THREE.Vector3,
   doorRequestsOut: NpcDoorRequests
 ) => void;
+
+export interface TeacherGreetingOutcome {
+  kind: 'reward' | 'penalty';
+  teacherId: string;
+  teacherName: string;
+  teacherX: number;
+  teacherZ: number;
+}
 
 export interface SchoolNPCsProps {
   scene: THREE.Scene | null;
   castShadow: boolean;
   currentFloor: FloorNumber;
   npcUpdateRef: React.MutableRefObject<NpcUpdateFn | null>;
+  greetTriggerToken: number;
+  onTeacherGreetingPromptChange: (prompt: TeacherGreetingPrompt | null) => void;
+  onTeacherGreetingOutcome: (outcome: TeacherGreetingOutcome) => void;
 }
 
 type Gender = 'boy' | 'girl';
@@ -103,49 +115,49 @@ const TEACHER_ROOM_SPOTS: Record<SubjectId, { x: number; z: number; greetYaw: nu
   science: { x: 10.3, z: -2.9, greetYaw: -Math.PI / 2 + 0.25 },
 };
 
-// Same-gender 3-line Uzbek conversations (2-3 alternating bubbles across 6-10 seconds)
+// Same-gender 3-line coherent Uzbek Q&A conversations (Savol -> Javob -> Xulosa)
 const BOY_DIALOGUES: string[][] = [
   [
-    "Salom, do'stim! Qaysi qavatda darsimiz bor?",
-    "Lift bilan tez chiqib tushsak bo'ladi!",
-    "Ketdik, birga ko'p ball yig'amiz!",
+    'Jasur, hozir qaysi darsga kiramiz?',
+    'Hozir 3-qavatda Informatika darsi, Bekzod!',
+    'Yur tezroq, ustozdan oldin xonaga kiraylik!',
   ],
   [
-    'Informatika xonasi 3-qavatda ekan!',
-    "Ha, hamma savollarni tez yechdim!",
-    "Endi 1-qavatdagi do'kondan do'ppi olaman!",
+    "Qara, yerga qog'oz tushib qolibdi.",
+    'Yur, uni olib axlat qutisiga tashlaylik!',
+    "To'g'ri, maktabimiz doim toza bo'lishi kerak!",
   ],
   [
-    "Do'kondan yangi sumka oldim 🎒",
-    "Zo'r ekan! Ingliz tili 2-qavatda!",
-    'Qani, darsga kechikmaylik!',
+    "Matematika darsi qiyin bo'lmadimi?",
+    "Yo'q, qoidasini tushunsang juda oson ekan!",
+    "Tanaffusda menga ham o'rgatib qo'yasanmi?",
   ],
 ];
 
 const GIRL_DIALOGUES: string[][] = [
   [
-    'Salom, dugonajon! Qaysi darsga borasan?',
-    'Hozir Ingliz tili 2-qavatda ekan!',
-    'Ajoyib! Men ham liftda chiqaman!',
+    "Zilola, yangi medalni qo'lga kiritdingmi?",
+    "Ha, barcha savollarga to'g'ri javob berdim! ⭐",
+    'Voy, tabriklayman! Men ham intilaman!',
   ],
   [
-    'Qara, maktabimiz 3 qavatli bo‘libdi!',
-    "Ha, Alifbe xonasida ovozli o'yin bor!",
-    'Ketdik, birga yangi bilim olamiz! ⭐',
+    "Qo'lingdagi kitob juda qiziq ko'rinyapti.",
+    'Ha, kutubxonadan allomalar haqida kitob oldim.',
+    "O'qib bo'lgach, menga ham berib turasanmi?",
   ],
   [
-    "Do'kondan yangi sumka oldim 🎒",
-    'Voy, juda chiroyli ekan!',
-    "Tabiiy fanlar darsidan keyin ko'ramiz!",
+    "Qo'ng'iroq chalindi, sinfga kiramizmi?",
+    'Ha, tartib bilan, shoshilmasdan boraylik.',
+    "Kettik, yangi bilimlarni o'rganamiz!",
   ],
 ];
 
 const TEACHER_LINES: string[] = [
-  'Assalomu alaykum, bolajonlar!',
-  'Qani, darsga kechikmaymiz!',
-  'Barakalla, bilimingizni oshiring!',
-  'Hozirgi dars xonasiga kiring!',
-  'Yangi bilimlarga tayyormisiz?',
+  'Assalomu alaykum, bilimdonlarim! Darsga tayyormisiz?',
+  "Yo'lakda yugurmang, bolalar, bir-biringizga ehtiyot bo'ling!",
+  "Qo'ng'iroq chalindi, qani, intizom bilan sinfga marhamat!",
+  'Vaqtni qadrlang, ilm — eng katta boylikdir!',
+  "Maktabimiz tozaligi va odobi sizlarning qo'lingizda, barakalla!",
 ];
 
 function drawRoundedRect(
@@ -213,13 +225,13 @@ function createSpeechBubbleTexture(
   borderColor = '#334155'
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 144;
+  canvas.width = 576;
+  canvas.height = 160;
   const ctx = canvas.getContext('2d')!;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  drawRoundedRect(ctx, 16, 14, 480, 96, 28);
+  drawRoundedRect(ctx, 16, 12, 544, 114, 28);
   ctx.fillStyle = '#FFFFFF';
   ctx.fill();
   ctx.lineWidth = 4;
@@ -227,30 +239,85 @@ function createSpeechBubbleTexture(
   ctx.stroke();
 
   ctx.beginPath();
-  ctx.moveTo(238, 108);
-  ctx.lineTo(256, 134);
-  ctx.lineTo(274, 108);
+  ctx.moveTo(270, 124);
+  ctx.lineTo(288, 150);
+  ctx.lineTo(306, 124);
   ctx.closePath();
   ctx.fillStyle = '#FFFFFF';
   ctx.fill();
 
   ctx.beginPath();
-  ctx.moveTo(238, 110);
-  ctx.lineTo(256, 134);
-  ctx.lineTo(274, 110);
+  ctx.moveTo(270, 126);
+  ctx.lineTo(288, 150);
+  ctx.lineTo(306, 126);
   ctx.lineWidth = 4;
   ctx.strokeStyle = borderColor;
   ctx.stroke();
 
-  drawRoundedRect(ctx, 36, 22, 440, 6, 3);
+  drawRoundedRect(ctx, 38, 20, 500, 6, 3);
   ctx.fillStyle = accentColor;
   ctx.fill();
 
   ctx.fillStyle = '#0F172A';
-  ctx.font = '700 25px "Plus Jakarta Sans", system-ui, sans-serif';
+  ctx.font = '700 24px "Plus Jakarta Sans", system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, 256, 66, 448);
+
+  const maxLineWidth = 496;
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxLineWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+
+  if (lines.length <= 1) {
+    ctx.fillText(text, 288, 74, maxLineWidth);
+  } else {
+    const line1 = lines[0];
+    const line2 = lines.slice(1).join(' ');
+    ctx.fillText(line1, 288, 58, maxLineWidth);
+    ctx.fillText(line2, 288, 92, maxLineWidth);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  return texture;
+}
+
+function createReactionBadgeTexture(
+  symbol: string,
+  bgColor: string,
+  borderColor: string
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 160;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.beginPath();
+  ctx.arc(80, 80, 62, 0, Math.PI * 2);
+  ctx.fillStyle = bgColor;
+  ctx.fill();
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = borderColor;
+  ctx.stroke();
+
+  ctx.font = '700 62px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(symbol, 80, 84);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -334,12 +401,30 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
   castShadow,
   currentFloor,
   npcUpdateRef,
+  greetTriggerToken,
+  onTeacherGreetingPromptChange,
+  onTeacherGreetingOutcome,
 }) => {
   const currentFloorRef = useRef<FloorNumber>(currentFloor);
+  const greetTriggerTokenRef = useRef<number>(greetTriggerToken);
+  const onPromptChangeRef = useRef(onTeacherGreetingPromptChange);
+  const onOutcomeRef = useRef(onTeacherGreetingOutcome);
 
   useEffect(() => {
     currentFloorRef.current = currentFloor;
   }, [currentFloor]);
+
+  useEffect(() => {
+    greetTriggerTokenRef.current = greetTriggerToken;
+  }, [greetTriggerToken]);
+
+  useEffect(() => {
+    onPromptChangeRef.current = onTeacherGreetingPromptChange;
+  }, [onTeacherGreetingPromptChange]);
+
+  useEffect(() => {
+    onOutcomeRef.current = onTeacherGreetingOutcome;
+  }, [onTeacherGreetingOutcome]);
 
   useEffect(() => {
     if (!scene) return;
@@ -604,16 +689,29 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       });
     };
 
-    const startSameGenderChat = (a: DynamicStudentNpc, b: DynamicStudentNpc) => {
-      if (a.gender !== b.gender) return;
+    const startSameGenderChat = (first: DynamicStudentNpc, second: DynamicStudentNpc) => {
+      if (first.gender !== second.gender) return;
 
-      const scriptBank = a.gender === 'boy' ? boyDialogueTextures : girlDialogueTextures;
-      const script = scriptBank[Math.floor(Math.random() * scriptBank.length)];
+      const scriptBank = first.gender === 'boy' ? boyDialogueTextures : girlDialogueTextures;
+      const scriptIdx = Math.floor(Math.random() * scriptBank.length);
+      const chosenTextures = scriptBank[scriptIdx];
 
-      const totalDuration = 6.4 + Math.random() * 3.4;
-      const lineCount = Math.random() < 0.35 ? 2 : 3;
-      const chosenTextures = script.slice(0, lineCount);
-      const lineInterval = totalDuration / lineCount;
+      // Align named speaker/listener naturally when Dialog 1 is picked
+      let a = first;
+      let b = second;
+      if (scriptIdx === 0) {
+        if (first.gender === 'boy' && first.name === 'Jasur') {
+          a = second;
+          b = first;
+        } else if (first.gender === 'girl' && first.name === 'Zilola') {
+          a = second;
+          b = first;
+        }
+      }
+
+      // Always complete all 3 coherent lines (Savol -> Javob -> Xulosa)
+      const lineInterval = 2.9 + Math.random() * 0.45;
+      const totalDuration = lineInterval * chosenTextures.length;
 
       const yawA = Math.atan2(b.x - a.x, b.z - a.z);
       const yawB = Math.atan2(a.x - b.x, a.z - b.z);
@@ -725,6 +823,31 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       extraTextures.push(t);
       return t;
     });
+    const teacherPromptBubbleTex = createSpeechBubbleTexture(
+      'Assalomu alaykum, bolajon!',
+      '#F59E0B',
+      '#B45309'
+    );
+    const teacherHappyBubbleTex = createSpeechBubbleTexture(
+      'Va alaykum assalom, barakalla!',
+      '#10B981',
+      '#047857'
+    );
+    const teacherSadBubbleTex = createSpeechBubbleTexture(
+      "Ustozga salom qani, o'quvchim?",
+      '#F43F5E',
+      '#BE123C'
+    );
+    const teacherHappyBadgeTex = createReactionBadgeTexture('😊⭐', '#FEF3C7', '#10B981');
+    const teacherSadBadgeTex = createReactionBadgeTexture('😔', '#FFE4E6', '#E11D48');
+    extraTextures.push(
+      teacherPromptBubbleTex,
+      teacherHappyBubbleTex,
+      teacherSadBubbleTex,
+      teacherHappyBadgeTex,
+      teacherSadBadgeTex
+    );
+
     const teacherBubbleMat = new THREE.SpriteMaterial({
       map: teacherBubbleTextures[0],
       transparent: true,
@@ -732,15 +855,61 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
     });
     extraMaterials.push(teacherBubbleMat);
     const teacherBubbleSprite = new THREE.Sprite(teacherBubbleMat);
-    teacherBubbleSprite.scale.set(3.8, 1.06, 1);
+    teacherBubbleSprite.scale.set(3.95, 1.1, 1);
     teacherBubbleSprite.position.set(0, 3.88, 0);
     teacherBubbleSprite.visible = false;
     teacherRig.root.add(teacherBubbleSprite);
+
+    const teacherReactionBadgeMat = new THREE.SpriteMaterial({
+      map: teacherHappyBadgeTex,
+      transparent: true,
+      depthWrite: false,
+    });
+    extraMaterials.push(teacherReactionBadgeMat);
+    const teacherReactionBadge = new THREE.Sprite(teacherReactionBadgeMat);
+    teacherReactionBadge.scale.set(1.12, 1.12, 1);
+    teacherReactionBadge.position.set(0, 4.92, 0);
+    teacherReactionBadge.visible = false;
+    teacherRig.root.add(teacherReactionBadge);
 
     npcGroup.add(teacherRig.root);
 
     let teacherLineIdx = 0;
     let teacherBubbleTimer = 4.2;
+
+    // Teacher Greeting & Ethics Mechanic state
+    const GREETING_TRIGGER_DIST = 3.0;
+    const GREETING_LEAVE_DIST = 4.0;
+    const GREETING_WINDOW_SEC = 5.0;
+    const GREETING_COOLDOWN_SEC = 120.0; // 2-minute cooldown per teacher
+    const PENALTY_COOLDOWN_SEC = 20.0;
+    const REACTION_DURATION_SEC = 3.8;
+
+    const teacherCooldowns: Record<string, number> = {};
+    const ethicsState: {
+      phase: 'idle' | 'prompting' | 'greeted_happy' | 'ignored_sad';
+      teacherId: string;
+      teacherName: string;
+      timer: number;
+      lastHandledGreetToken: number;
+      lastReportedBucket: number;
+    } = {
+      phase: 'idle',
+      teacherId: '',
+      teacherName: '',
+      timer: 0,
+      lastHandledGreetToken: greetTriggerTokenRef.current,
+      lastReportedBucket: -1,
+    };
+
+    const clearGreetingPrompt = () => {
+      if (ethicsState.phase === 'prompting') {
+        ethicsState.phase = 'idle';
+        ethicsState.timer = 0;
+        ethicsState.lastReportedBucket = -1;
+        onPromptChangeRef.current(null);
+      }
+    };
 
     const setTeacherLine = (idx: number) => {
       teacherLineIdx = idx % teacherBubbleTextures.length;
@@ -768,8 +937,8 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       teacherRig.root.rotation.y = teacherState.yaw;
       teacherRig.root.visible = true;
       teacherBubbleSprite.visible = true;
-      setTeacherLine(3);
-      teacherBubbleTimer = 3.2;
+      setTeacherLine(0);
+      teacherBubbleTimer = 3.6;
     };
 
     const smoothTurn = (currentYaw: number, targetYaw: number, dt: number, rate = 7.5): number => {
@@ -783,14 +952,27 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
     let initializedFloor: FloorNumber = currentFloorRef.current;
     resetStudentsForFloor(initializedFloor);
 
-    const updateNpcs: NpcUpdateFn = (dt, elapsed, activeSubject, doorRequestsOut) => {
+    const updateNpcs: NpcUpdateFn = (dt, elapsed, activeSubject, playerPos, doorRequestsOut) => {
       const fl = currentFloorRef.current;
+
+      // Decrement per-teacher greeting cooldowns every unpaused frame
+      for (const key in teacherCooldowns) {
+        if (teacherCooldowns[key] > 0) {
+          teacherCooldowns[key] = Math.max(0, teacherCooldowns[key] - dt);
+        }
+      }
 
       // Detect floor change -> cleanly reposition students onto this floor's valid doors/corridor!
       if (fl !== initializedFloor) {
         initializedFloor = fl;
         resetStudentsForFloor(fl);
         teacherState.wasOnFloor = false;
+        clearGreetingPrompt();
+        teacherReactionBadge.visible = false;
+        if (ethicsState.phase !== 'idle') {
+          ethicsState.phase = 'idle';
+          ethicsState.timer = 0;
+        }
       }
 
       doorRequestsOut.alifbe = 0;
@@ -1015,8 +1197,15 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       if (!teacherShouldBeHere) {
         teacherRig.root.visible = false;
         teacherBubbleSprite.visible = false;
+        teacherReactionBadge.visible = false;
         teacherState.wasOnFloor = false;
         teacherState.lastKnownActive = activeSubject;
+        clearGreetingPrompt();
+        if (ethicsState.phase !== 'idle') {
+          ethicsState.phase = 'idle';
+          ethicsState.timer = 0;
+        }
+        ethicsState.lastHandledGreetToken = greetTriggerTokenRef.current;
         return;
       }
 
@@ -1041,7 +1230,7 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
           teacherState.rushToNewActive = false;
           teacherRig.root.visible = true;
           teacherBubbleSprite.visible = true;
-          setTeacherLine(3);
+          setTeacherLine(2);
           teacherBubbleTimer = 4.0;
         }
       }
@@ -1049,8 +1238,151 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       const activeTeacherSubj = teacherState.targetSubject!;
       const teacherSpot = TEACHER_ROOM_SPOTS[activeTeacherSubj];
       const teacherDoor = DOOR_BY_SUBJECT[activeTeacherSubj];
+      const activeTeacherMeta = SUBJECT_META[activeTeacherSubj];
+      const activeTeacherId = `teacher_${activeTeacherSubj}`;
 
-      if (teacherState.mode === 'walking_to_spot') {
+      const teacherInteractable =
+        teacherRig.root.visible &&
+        teacherState.mode !== 'inside' &&
+        teacherState.mode !== 'opening_exit' &&
+        teacherState.mode !== 'entering';
+
+      const distToPlayer = Math.hypot(playerPos.x - teacherState.x, playerPos.z - teacherState.z);
+      const yawToPlayer = Math.atan2(playerPos.x - teacherState.x, playerPos.z - teacherState.z);
+
+      // Update Teacher Greeting & Ethics Mechanic state machine
+      if (!teacherInteractable) {
+        clearGreetingPrompt();
+        ethicsState.lastHandledGreetToken = greetTriggerTokenRef.current;
+      } else if (ethicsState.phase === 'idle') {
+        ethicsState.lastHandledGreetToken = greetTriggerTokenRef.current;
+        if (distToPlayer <= GREETING_TRIGGER_DIST && (teacherCooldowns[activeTeacherId] ?? 0) <= 0) {
+          ethicsState.phase = 'prompting';
+          ethicsState.teacherId = activeTeacherId;
+          ethicsState.teacherName = activeTeacherMeta.teacherName;
+          ethicsState.timer = GREETING_WINDOW_SEC;
+          ethicsState.lastReportedBucket = Math.ceil(GREETING_WINDOW_SEC * 10);
+
+          teacherBubbleMat.map = teacherPromptBubbleTex;
+          teacherBubbleMat.needsUpdate = true;
+          teacherBubbleSprite.visible = true;
+          teacherReactionBadge.visible = false;
+
+          onPromptChangeRef.current({
+            teacherId: activeTeacherId,
+            teacherName: activeTeacherMeta.teacherName,
+            timeRemainingSec: GREETING_WINDOW_SEC,
+            totalTimeSec: GREETING_WINDOW_SEC,
+          });
+        }
+      } else if (ethicsState.phase === 'prompting') {
+        const playerGreeted = greetTriggerTokenRef.current !== ethicsState.lastHandledGreetToken;
+        if (playerGreeted) {
+          ethicsState.lastHandledGreetToken = greetTriggerTokenRef.current;
+          ethicsState.phase = 'greeted_happy';
+          ethicsState.timer = REACTION_DURATION_SEC;
+          ethicsState.lastReportedBucket = -1;
+          teacherCooldowns[ethicsState.teacherId] = GREETING_COOLDOWN_SEC;
+
+          teacherBubbleMat.map = teacherHappyBubbleTex;
+          teacherBubbleMat.needsUpdate = true;
+          teacherBubbleSprite.visible = true;
+          teacherReactionBadgeMat.map = teacherHappyBadgeTex;
+          teacherReactionBadgeMat.needsUpdate = true;
+          teacherReactionBadge.visible = true;
+
+          onPromptChangeRef.current(null);
+          onOutcomeRef.current({
+            kind: 'reward',
+            teacherId: ethicsState.teacherId,
+            teacherName: ethicsState.teacherName,
+            teacherX: teacherState.x,
+            teacherZ: teacherState.z,
+          });
+        } else {
+          ethicsState.timer -= dt;
+          if (distToPlayer > GREETING_LEAVE_DIST || ethicsState.timer <= 0) {
+            ethicsState.phase = 'ignored_sad';
+            ethicsState.timer = REACTION_DURATION_SEC;
+            ethicsState.lastReportedBucket = -1;
+            teacherCooldowns[ethicsState.teacherId] = PENALTY_COOLDOWN_SEC;
+
+            teacherBubbleMat.map = teacherSadBubbleTex;
+            teacherBubbleMat.needsUpdate = true;
+            teacherBubbleSprite.visible = true;
+            teacherReactionBadgeMat.map = teacherSadBadgeTex;
+            teacherReactionBadgeMat.needsUpdate = true;
+            teacherReactionBadge.visible = true;
+
+            onPromptChangeRef.current(null);
+            onOutcomeRef.current({
+              kind: 'penalty',
+              teacherId: ethicsState.teacherId,
+              teacherName: ethicsState.teacherName,
+              teacherX: teacherState.x,
+              teacherZ: teacherState.z,
+            });
+          } else {
+            const bucket = Math.max(0, Math.ceil(ethicsState.timer * 10));
+            if (bucket !== ethicsState.lastReportedBucket) {
+              ethicsState.lastReportedBucket = bucket;
+              onPromptChangeRef.current({
+                teacherId: ethicsState.teacherId,
+                teacherName: ethicsState.teacherName,
+                timeRemainingSec: Math.max(0, ethicsState.timer),
+                totalTimeSec: GREETING_WINDOW_SEC,
+              });
+            }
+          }
+        }
+      } else if (ethicsState.phase === 'greeted_happy' || ethicsState.phase === 'ignored_sad') {
+        ethicsState.lastHandledGreetToken = greetTriggerTokenRef.current;
+        ethicsState.timer -= dt;
+        if (ethicsState.timer <= 0) {
+          ethicsState.phase = 'idle';
+          ethicsState.timer = 0;
+          teacherReactionBadge.visible = false;
+          teacherRig.headGroup.rotation.set(0, 0, 0);
+          setTeacherLine(teacherLineIdx + 1);
+          teacherBubbleTimer = 3.6;
+        }
+      }
+
+      const teacherPausedForGreeting =
+        teacherInteractable &&
+        (ethicsState.phase === 'prompting' ||
+          ethicsState.phase === 'greeted_happy' ||
+          ethicsState.phase === 'ignored_sad');
+
+      if (teacherPausedForGreeting) {
+        // Teacher pauses politely in place and faces the student during greeting interaction
+        teacherState.yaw = smoothTurn(teacherState.yaw, yawToPlayer, dt, 8.5);
+        teacherRig.root.position.set(teacherState.x, 0, teacherState.z);
+        teacherRig.root.rotation.y = teacherState.yaw;
+        teacherRig.updateAnimation(dt, 0, false, 0);
+
+        if (ethicsState.phase === 'prompting') {
+          teacherRig.rightArmPivot.rotation.x = -0.35;
+          teacherRig.leftArmPivot.rotation.x = -0.45 + Math.sin(elapsed * 3.6) * 0.16;
+          teacherRig.headGroup.rotation.x = Math.sin(elapsed * 2.2) * 0.05;
+          teacherRig.headGroup.rotation.y = 0;
+        } else if (ethicsState.phase === 'greeted_happy') {
+          // Warm respectful nod & right hand placed politely toward chest
+          const progress = 1 - Math.max(0, ethicsState.timer) / REACTION_DURATION_SEC;
+          const nodWave = Math.sin(progress * Math.PI * 3.0);
+          teacherRig.headGroup.rotation.x = Math.max(0, nodWave) * 0.24;
+          teacherRig.headGroup.rotation.y = Math.sin(progress * Math.PI * 2.0) * 0.08;
+          teacherRig.rightArmPivot.rotation.x = -0.82;
+          teacherRig.rightArmPivot.rotation.z = -0.34;
+          teacherRig.leftArmPivot.rotation.x = -0.22;
+        } else {
+          // Gentle disappointed head shake
+          teacherRig.headGroup.rotation.x = 0.14;
+          teacherRig.headGroup.rotation.y = Math.sin(elapsed * 6.5) * 0.26;
+          teacherRig.rightArmPivot.rotation.x = -0.1;
+          teacherRig.leftArmPivot.rotation.x = -0.1;
+        }
+      } else if (teacherState.mode === 'walking_to_spot') {
         const tdx = teacherSpot.x - teacherState.x;
         const tdz = teacherSpot.z - teacherState.z;
         const tDist = Math.hypot(tdx, tdz);
@@ -1060,9 +1392,15 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
           teacherState.z = teacherSpot.z;
           teacherState.mode = 'inviting';
           teacherState.timer = 6.0 + Math.random() * 2.0;
-          setTeacherLine(Math.random() < 0.5 ? 1 : 3);
-          teacherBubbleTimer = 3.2;
+          setTeacherLine(Math.random() < 0.5 ? 0 : 2);
+          teacherBubbleTimer = 3.6;
           teacherBubbleSprite.visible = true;
+        } else if (distToPlayer <= GREETING_TRIGGER_DIST) {
+          // Even during cooldown, politely look toward a nearby student
+          teacherState.yaw = smoothTurn(teacherState.yaw, yawToPlayer, dt, 7.5);
+          teacherRig.root.position.set(teacherState.x, 0, teacherState.z);
+          teacherRig.root.rotation.y = teacherState.yaw;
+          teacherRig.updateAnimation(dt, 0, false, 0);
         } else {
           const step = Math.min(tDist, teacherState.speed * dt);
           teacherState.x += (tdx / tDist) * step;
@@ -1075,13 +1413,32 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
         }
       } else if (teacherState.mode === 'inviting') {
         teacherState.timer -= dt;
-        teacherState.yaw = smoothTurn(teacherState.yaw, teacherSpot.greetYaw, dt, 5.5);
+        // Address nearby player or nearest visible hallway student instead of speaking into empty space
+        let targetLookYaw = teacherSpot.greetYaw;
+        let lookingAtStudent = false;
+        if (distToPlayer <= 6.5) {
+          targetLookYaw = yawToPlayer;
+          lookingAtStudent = true;
+        } else {
+          let nearestStudentDist = 6.5;
+          for (let i = 0; i < students.length; i++) {
+            const st = students[i];
+            if (!st.rig.root.visible) continue;
+            const d = Math.hypot(st.x - teacherState.x, st.z - teacherState.z);
+            if (d < nearestStudentDist) {
+              nearestStudentDist = d;
+              targetLookYaw = Math.atan2(st.x - teacherState.x, st.z - teacherState.z);
+              lookingAtStudent = true;
+            }
+          }
+        }
+        teacherState.yaw = smoothTurn(teacherState.yaw, targetLookYaw, dt, 6.5);
         teacherRig.root.position.set(teacherState.x, 0, teacherState.z);
         teacherRig.root.rotation.y = teacherState.yaw;
         teacherRig.updateAnimation(dt, 0, false, 0);
         teacherRig.rightArmPivot.rotation.x = -0.32;
         teacherRig.leftArmPivot.rotation.x = -0.45 + Math.sin(elapsed * 3.2) * 0.22;
-        teacherRig.headGroup.rotation.y = Math.sin(elapsed * 1.4) * 0.22;
+        teacherRig.headGroup.rotation.y = lookingAtStudent ? 0 : Math.sin(elapsed * 1.4) * 0.22;
 
         if (teacherState.timer <= 0) {
           teacherRig.headGroup.rotation.y = 0;
@@ -1122,6 +1479,7 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
           teacherState.z = teacherDoor.insideZ;
           teacherRig.root.visible = false;
           teacherBubbleSprite.visible = false;
+          teacherReactionBadge.visible = false;
           teacherState.mode = 'inside';
           teacherState.timer = 25 + Math.random() * 10;
         } else {
@@ -1146,7 +1504,7 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
         if (teacherState.timer <= 0) {
           teacherRig.root.visible = true;
           teacherBubbleSprite.visible = true;
-          setTeacherLine(teacherState.rushToNewActive ? 3 : 2);
+          setTeacherLine(teacherState.rushToNewActive ? 2 : 1);
           teacherBubbleTimer = 4.2;
           teacherState.yaw = Math.atan2(teacherDoor.x - teacherState.x, teacherDoor.z - teacherState.z);
           teacherRig.root.position.set(teacherState.x, 0, teacherState.z);
@@ -1194,6 +1552,11 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
             teacherState.targetSubject = activeSubject;
             teacherState.mode = 'walking_to_spot';
           }
+        } else if (distToPlayer <= GREETING_TRIGGER_DIST) {
+          teacherState.yaw = smoothTurn(teacherState.yaw, yawToPlayer, dt, 7.5);
+          teacherRig.root.position.set(teacherState.x, 0, teacherState.z);
+          teacherRig.root.rotation.y = teacherState.yaw;
+          teacherRig.updateAnimation(dt, 0, false, 0);
         } else {
           const step = Math.min(dist, teacherState.speed * 0.92 * dt);
           teacherState.x += (dx / dist) * step;
@@ -1207,18 +1570,25 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       }
 
       if (teacherRig.root.visible) {
-        teacherBubbleTimer -= dt;
-        if (teacherBubbleTimer <= 0) {
-          setTeacherLine(teacherLineIdx + 1);
-          teacherBubbleTimer = 3.8 + Math.random() * 1.4;
+        // Only cycle generic teacher lines when NOT displaying a greeting/reaction bubble
+        if (ethicsState.phase === 'idle') {
+          teacherBubbleTimer -= dt;
+          if (teacherBubbleTimer <= 0) {
+            setTeacherLine(teacherLineIdx + 1);
+            teacherBubbleTimer = 3.8 + Math.random() * 1.4;
+          }
         }
         teacherBubbleSprite.position.y = 3.88 + Math.sin(elapsed * 2.8) * 0.05;
+        if (teacherReactionBadge.visible) {
+          teacherReactionBadge.position.y = 4.94 + Math.sin(elapsed * 4.8) * 0.09;
+        }
       }
     };
 
     npcUpdateRef.current = updateNpcs;
 
     return () => {
+      clearGreetingPrompt();
       npcUpdateRef.current = null;
       scene.remove(npcGroup);
       rigs.forEach((r) => r.dispose());

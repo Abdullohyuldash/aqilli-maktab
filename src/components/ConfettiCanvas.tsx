@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 
 interface ConfettiCanvasProps {
   active: boolean;
+  zIndexClass?: string;
 }
 
 interface Particle {
@@ -19,7 +20,10 @@ interface Particle {
 
 const COLORS = ['#2563EB', '#16A34A', '#F59E0B', '#E11D48', '#7C3AED', '#06B6D4'];
 
-export const ConfettiCanvas: React.FC<ConfettiCanvasProps> = ({ active }) => {
+export const ConfettiCanvas: React.FC<ConfettiCanvasProps> = ({
+  active,
+  zIndexClass = 'z-50',
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -96,7 +100,7 @@ export const ConfettiCanvas: React.FC<ConfettiCanvasProps> = ({ active }) => {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 z-50 pointer-events-none"
+      className={`fixed inset-0 ${zIndexClass} pointer-events-none`}
       aria-hidden="true"
     />
   );

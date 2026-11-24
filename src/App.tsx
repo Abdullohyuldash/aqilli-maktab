@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AvatarEmote,
+  AwardDefinition,
+  EmoteRequest,
   EquippedAccessories,
+  EthicsFeedbackToast,
   FloorNumber,
   PlayerGender,
   PlayerProfile,
   ShopItem,
   SubjectId,
+  TeacherGreetingPrompt,
+  TrashPickupPrompt,
   VirtualControlsState,
   WorldZone,
   ZoneId,
@@ -18,9 +24,11 @@ import {
   saveProfile,
 } from './utils/storage';
 import { FLOOR_META, getLessonForPlayer, SUBJECT_META } from './data/curriculum';
+import { ALL_AWARDS, evaluateNewlyUnlockedAwards } from './data/awards';
 import { soundEngine, stopSpeaking } from './utils/sound';
 import { StartScreen } from './components/StartScreen';
-import { SchoolCanvas3D } from './components/SchoolCanvas3D';
+import { SchoolCanvas3D, TrashOutcome } from './components/SchoolCanvas3D';
+import type { TeacherGreetingOutcome } from './components/SchoolNPCs';
 import { HudOverlay } from './components/HudOverlay';
 import { LessonModal } from './components/LessonModal';
 import { ShopModal } from './components/ShopModal';
@@ -28,6 +36,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { CurriculumInspectorModal } from './components/CurriculumInspectorModal';
 import { ScheduleModal } from './components/ScheduleModal';
 import { LiftModal } from './components/LiftModal';
+import { AwardCelebrationPopup, AwardsModal } from './components/AwardsModal';
 
 export default function App() {
   const [savedExists] = useState<boolean>(() => Boolean(loadProfile()?.name));
@@ -47,6 +56,7 @@ export default function App() {
     | { type: 'lesson'; subject: SubjectId }
     | { type: 'shop' }
     | { type: 'schedule' }
+    | { type: 'awards' }
     | { type: 'lift' }
     | { type: 'settings' }
     | { type: 'inspector' }
@@ -55,8 +65,21 @@ export default function App() {
 
   const [muted, setMuted] = useState(false);
   const [nudgeToken, setNudgeToken] = useState(0);
+  const [emoteRequest, setEmoteRequest] = useState<EmoteRequest | null>(null);
+  const [activeEmote, setActiveEmote] = useState<AvatarEmote | null>(null);
   const [nearbyInactiveZone, setNearbyInactiveZone] = useState<ZoneId | null>(null);
   const [nearbyComingSoon, setNearbyComingSoon] = useState<WorldZone | null>(null);
+  const [teacherGreetingPrompt, setTeacherGreetingPrompt] =
+    useState<TeacherGreetingPrompt | null>(null);
+  const [greetTriggerToken, setGreetTriggerToken] = useState(0);
+  const [trashPrompt, setTrashPrompt] = useState<TrashPickupPrompt | null>(null);
+  const [trashPickupToken, setTrashPickupToken] = useState(0);
+  const [ethicsFeedback, setEthicsFeedback] = useState<EthicsFeedbackToast | null>(null);
+  const [awardCelebrationQueue, setAwardCelebrationQueue] = useState<AwardDefinition[]>([]);
+  const seenUnlockedAwardsRef = useRef<Set<string>>(new Set(profile.unlockedAwards));
+  const emoteClearTimerRef = useRef<number | null>(null);
+  const victoryEmoteTimerRef = useRef<number | null>(null);
+  const ethicsToastTimerRef = useRef<number | null>(null);
 
   const virtualControlsRef = useRef<VirtualControlsState>({
     up: false,
@@ -66,10 +89,13 @@ export default function App() {
     jump: false,
   });
 
-  // Clean up elevator transition timers on unmount
+  // Clean up elevator, emote & ethics toast timers on unmount
   useEffect(() => {
     return () => {
       transitionTimersRef.current.forEach((id) => window.clearTimeout(id));
+      if (emoteClearTimerRef.current !== null) window.clearTimeout(emoteClearTimerRef.current);
+      if (victoryEmoteTimerRef.current !== null) window.clearTimeout(victoryEmoteTimerRef.current);
+      if (ethicsToastTimerRef.current !== null) window.clearTimeout(ethicsToastTimerRef.current);
     };
   }, []);
 
@@ -80,11 +106,30 @@ export default function App() {
     }
   }, [profile]);
 
+  // Detect any newly unlocked medals cleanly (StrictMode-safe) and trigger celebration + fanfare
+  useEffect(() => {
+    const newlySeen: AwardDefinition[] = [];
+    for (const awardId of profile.unlockedAwards) {
+      if (!seenUnlockedAwardsRef.current.has(awardId)) {
+        seenUnlockedAwardsRef.current.add(awardId);
+        const def = ALL_AWARDS.find((a) => a.id === awardId);
+        if (def) newlySeen.push(def);
+      }
+    }
+    if (newlySeen.length > 0) {
+      soundEngine.playAwardUnlocked();
+      setAwardCelebrationQueue((prev) => [...prev, ...newlySeen]);
+    }
+  }, [profile.unlockedAwards]);
+
   const gradeSubjectOrder = getSubjectOrderForGrade(profile.grade);
   const activeSubject: SubjectId =
     gradeSubjectOrder[profile.activeSubjectIndex % gradeSubjectOrder.length];
 
-  const isPaused = activeModal.type !== 'none' || elevatorTransition !== null;
+  const isPaused =
+    activeModal.type !== 'none' ||
+    elevatorTransition !== null ||
+    awardCelebrationQueue.length > 0;
 
   const handleStartGame = (
     name: string,
@@ -158,25 +203,242 @@ export default function App() {
     [currentFloor, closeModalAndNudge]
   );
 
-  const handleLessonComplete = (earnedCoins: number) => {
+  const handleTriggerEmote = useCallback(
+    (
+      emote: AvatarEmote,
+      durationSec = 2.8,
+      playVictoryFanfare = false,
+      silentSound = false
+    ) => {
+      setEmoteRequest((prev) => ({
+        emote,
+        durationSec,
+        token: (prev?.token ?? 0) + 1,
+      }));
+      setActiveEmote(emote);
+
+      if (!silentSound) {
+        if (playVictoryFanfare) {
+          soundEngine.playLessonComplete();
+        } else {
+          soundEngine.playEmote(emote);
+        }
+      }
+
+      if (emoteClearTimerRef.current !== null) {
+        window.clearTimeout(emoteClearTimerRef.current);
+      }
+      emoteClearTimerRef.current = window.setTimeout(() => {
+        setActiveEmote(null);
+        emoteClearTimerRef.current = null;
+      }, Math.round(durationSec * 1000));
+    },
+    []
+  );
+
+  const showEthicsToast = useCallback((toast: Omit<EthicsFeedbackToast, 'id'>) => {
+    setEthicsFeedback({ ...toast, id: Date.now() });
+    if (ethicsToastTimerRef.current !== null) {
+      window.clearTimeout(ethicsToastTimerRef.current);
+    }
+    ethicsToastTimerRef.current = window.setTimeout(() => {
+      setEthicsFeedback(null);
+      ethicsToastTimerRef.current = null;
+    }, 3400);
+  }, []);
+
+  const handleGreetTeacher = useCallback(() => {
+    if (isPaused || !teacherGreetingPrompt) return;
+    setGreetTriggerToken((t) => t + 1);
+  }, [isPaused, teacherGreetingPrompt]);
+
+  const canTriggerTrashAction =
+    trashPrompt !== null && (trashPrompt.mode === 'pickup' || trashPrompt.mode === 'dropoff');
+
+  const handlePickupTrash = useCallback(() => {
+    if (isPaused || !canTriggerTrashAction) return;
+    setTrashPickupToken((t) => t + 1);
+  }, [isPaused, canTriggerTrashAction]);
+
+  // Press 'E' keyboard shortcut to politely greet Ustoz OR pick up / throw trash into bin
+  useEffect(() => {
+    if (screen !== 'school' || isPaused || (!teacherGreetingPrompt && !canTriggerTrashAction)) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyE') return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      if (teacherGreetingPrompt) {
+        handleGreetTeacher();
+      } else if (canTriggerTrashAction) {
+        handlePickupTrash();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    screen,
+    isPaused,
+    teacherGreetingPrompt,
+    canTriggerTrashAction,
+    handleGreetTeacher,
+    handlePickupTrash,
+  ]);
+
+  const handleTeacherGreetingOutcome = useCallback(
+    (outcome: TeacherGreetingOutcome) => {
+      if (outcome.kind === 'reward') {
+        handleTriggerEmote('salom', 2.8, false, true);
+        soundEngine.playGreetingReward();
+        setProfile((prev) => {
+          const nextStats = {
+            ...prev.stats,
+            greetingsGiven: prev.stats.greetingsGiven + 1,
+          };
+          const newlyEarned = evaluateNewlyUnlockedAwards(nextStats, prev.unlockedAwards);
+          const bonusCoins = newlyEarned.reduce((sum, a) => sum + a.rewardCoins, 0);
+          const updated: PlayerProfile = {
+            ...prev,
+            coins: prev.coins + 10 + bonusCoins,
+            stats: nextStats,
+            unlockedAwards:
+              newlyEarned.length > 0
+                ? [...prev.unlockedAwards, ...newlyEarned.map((a) => a.id)]
+                : prev.unlockedAwards,
+          };
+          saveProfile(updated);
+          return updated;
+        });
+        showEthicsToast({
+          kind: 'reward',
+          deltaCoins: 10,
+          title: "+10 ⭐ Odobli o'quvchi!",
+          subtitle: 'Va alaykum assalom, barakalla!',
+        });
+      } else {
+        soundEngine.playGreetingWarning();
+        setProfile((prev) => {
+          const updated: PlayerProfile = {
+            ...prev,
+            coins: Math.max(0, prev.coins - 5),
+          };
+          saveProfile(updated);
+          return updated;
+        });
+        showEthicsToast({
+          kind: 'penalty',
+          deltaCoins: -5,
+          title: '-5 🪙 Ustozga salom qani?',
+          subtitle: "Ustoz yonidan salom bermay o'tdingiz",
+        });
+      }
+    },
+    [handleTriggerEmote, showEthicsToast]
+  );
+
+  const handleTrashOutcome = useCallback(
+    (outcome: TrashOutcome) => {
+      if (outcome.kind === 'deposited') {
+        soundEngine.playTrashCollect();
+        setProfile((prev) => {
+          const nextStats = {
+            ...prev.stats,
+            trashCollected: prev.stats.trashCollected + 1,
+          };
+          const newlyEarned = evaluateNewlyUnlockedAwards(nextStats, prev.unlockedAwards);
+          const bonusCoins = newlyEarned.reduce((sum, a) => sum + a.rewardCoins, 0);
+          const updated: PlayerProfile = {
+            ...prev,
+            coins: prev.coins + 10 + bonusCoins,
+            stats: nextStats,
+            unlockedAwards:
+              newlyEarned.length > 0
+                ? [...prev.unlockedAwards, ...newlyEarned.map((a) => a.id)]
+                : prev.unlockedAwards,
+          };
+          saveProfile(updated);
+          return updated;
+        });
+        showEthicsToast({
+          kind: 'reward',
+          deltaCoins: 10,
+          title: '+10 ⭐ Ozodalik uchun!',
+          subtitle: `${outcome.trashLabel} axlat qutisiga tashlandi!`,
+        });
+      } else {
+        soundEngine.playGreetingWarning();
+        setProfile((prev) => {
+          const updated: PlayerProfile = {
+            ...prev,
+            coins: Math.max(0, prev.coins - 3),
+          };
+          saveProfile(updated);
+          return updated;
+        });
+        showEthicsToast({
+          kind: 'penalty',
+          deltaCoins: -3,
+          title: "-3 🪙 Chiqindiga befarq bo'ldingiz!",
+          subtitle: "Chiqindiga befarq bo'ldingiz! Atrofni toza tuting.",
+        });
+      }
+    },
+    [showEthicsToast]
+  );
+
+  const handleLessonComplete = (earnedCoins: number, correctCount: number, totalRounds: number) => {
     if (activeModal.type !== 'lesson') return;
     const finishedSubject = activeModal.subject;
     const finishedWasActive = finishedSubject === activeSubject;
 
-    setProfile((prev) => ({
-      ...prev,
-      coins: prev.coins + earnedCoins,
-      completedLessons: prev.completedLessons + 1,
-      subjectCompletions: {
-        ...prev.subjectCompletions,
-        [finishedSubject]: (prev.subjectCompletions[finishedSubject] || 0) + 1,
-      },
-      activeSubjectIndex: finishedWasActive
-        ? (prev.activeSubjectIndex + 1) % getSubjectOrderForGrade(prev.grade).length
-        : prev.activeSubjectIndex,
-    }));
+    const isPerfect = totalRounds > 0 && correctCount >= totalRounds;
+    const isGreat = totalRounds > 0 && correctCount >= Math.max(1, Math.ceil(totalRounds * 0.75));
+    const countsForMath = isGreat && (finishedSubject === 'math' || finishedSubject === 'cs');
+    const countsForLanguage =
+      isGreat && (finishedSubject === 'alifbe' || finishedSubject === 'english');
+
+    setProfile((prev) => {
+      const nextStats = {
+        ...prev.stats,
+        mathCompleted: prev.stats.mathCompleted + (countsForMath ? 1 : 0),
+        languageCompleted: prev.stats.languageCompleted + (countsForLanguage ? 1 : 0),
+      };
+      const newlyEarned = evaluateNewlyUnlockedAwards(nextStats, prev.unlockedAwards);
+      const bonusCoins = newlyEarned.reduce((sum, a) => sum + a.rewardCoins, 0);
+
+      const updated: PlayerProfile = {
+        ...prev,
+        coins: prev.coins + earnedCoins + bonusCoins,
+        completedLessons: prev.completedLessons + 1,
+        subjectCompletions: {
+          ...prev.subjectCompletions,
+          [finishedSubject]: (prev.subjectCompletions[finishedSubject] || 0) + 1,
+        },
+        activeSubjectIndex: finishedWasActive
+          ? (prev.activeSubjectIndex + 1) % getSubjectOrderForGrade(prev.grade).length
+          : prev.activeSubjectIndex,
+        stats: nextStats,
+        unlockedAwards:
+          newlyEarned.length > 0
+            ? [...prev.unlockedAwards, ...newlyEarned.map((a) => a.id)]
+            : prev.unlockedAwards,
+      };
+      saveProfile(updated);
+      return updated;
+    });
 
     closeModalAndNudge();
+
+    // Celebrate in the 3D corridor after closing the modal on excellent / high scores
+    if (isPerfect || isGreat) {
+      if (victoryEmoteTimerRef.current !== null) {
+        window.clearTimeout(victoryEmoteTimerRef.current);
+      }
+      victoryEmoteTimerRef.current = window.setTimeout(() => {
+        handleTriggerEmote(isPerfect ? 'quvonch' : 'qarsak', isPerfect ? 3.0 : 2.8, true);
+        victoryEmoteTimerRef.current = null;
+      }, 140);
+    }
   };
 
   const handleBuyItem = (item: ShopItem) => {
@@ -287,10 +549,24 @@ export default function App() {
         isPaused={isPaused}
         nudgeToken={nudgeToken}
         elevatorTeleportToken={elevatorTeleportToken}
+        emoteRequest={emoteRequest}
+        greetTriggerToken={greetTriggerToken}
+        trashPickupToken={trashPickupToken}
         virtualControlsRef={virtualControlsRef}
         onEnterZone={handleEnterZone}
         onNearbyInactiveZone={setNearbyInactiveZone}
         onNearbyComingSoon={setNearbyComingSoon}
+        onTeacherGreetingPromptChange={setTeacherGreetingPrompt}
+        onTeacherGreetingOutcome={handleTeacherGreetingOutcome}
+        onTrashPromptChange={setTrashPrompt}
+        onTrashOutcome={handleTrashOutcome}
+        onEmoteEnded={() => {
+          setActiveEmote(null);
+          if (emoteClearTimerRef.current !== null) {
+            window.clearTimeout(emoteClearTimerRef.current);
+            emoteClearTimerRef.current = null;
+          }
+        }}
       />
 
       {/* Always-visible lightweight Game HUD */}
@@ -299,13 +575,22 @@ export default function App() {
         currentFloor={currentFloor}
         activeSubject={activeSubject}
         muted={muted}
+        isPaused={isPaused}
+        activeEmote={activeEmote}
         nearbyInactiveZone={isPaused ? null : nearbyInactiveZone}
         nearbyComingSoon={isPaused ? null : nearbyComingSoon}
+        teacherGreetingPrompt={isPaused ? null : teacherGreetingPrompt}
+        trashPrompt={isPaused ? null : trashPrompt}
+        ethicsFeedback={ethicsFeedback}
         virtualControlsRef={virtualControlsRef}
         onToggleMute={handleToggleMute}
         onOpenSchedule={() => {
           soundEngine.playEquip();
           setActiveModal({ type: 'schedule' });
+        }}
+        onOpenAwards={() => {
+          soundEngine.playEquip();
+          setActiveModal({ type: 'awards' });
         }}
         onOpenShop={() => {
           soundEngine.playEquip();
@@ -323,6 +608,15 @@ export default function App() {
           soundEngine.playEquip();
           setActiveModal({ type: 'lesson', subject });
         }}
+        onTriggerEmote={(emote, durationSec) => {
+          if (emote === 'salom' && teacherGreetingPrompt && !isPaused) {
+            handleGreetTeacher();
+          } else {
+            handleTriggerEmote(emote, durationSec, false);
+          }
+        }}
+        onGreetTeacher={handleGreetTeacher}
+        onPickupTrash={handlePickupTrash}
       />
 
       {/* 0.5-Second Elevator Floor Transition Overlay */}
@@ -354,6 +648,7 @@ export default function App() {
         <LessonModal
           lesson={currentLesson}
           grade={profile.grade}
+          studentName={profile.name}
           onComplete={handleLessonComplete}
           onClose={closeModalAndNudge}
         />
@@ -374,6 +669,11 @@ export default function App() {
         <ScheduleModal profile={profile} onClose={closeModalAndNudge} />
       )}
 
+      {/* Multi-Category 3-Tier Awards Showcase Modal (AutoFitModal, zero scroll) */}
+      {activeModal.type === 'awards' && (
+        <AwardsModal profile={profile} onClose={() => setActiveModal({ type: 'none' })} />
+      )}
+
       {/* Curriculum Inspector & Play-Test Modal */}
       {activeModal.type === 'inspector' && (
         <CurriculumInspectorModal onClose={() => setActiveModal({ type: 'none' })} />
@@ -386,9 +686,26 @@ export default function App() {
           onSave={handleSaveSettings}
           onBackToStart={() => {
             setActiveModal({ type: 'none' });
+            setTeacherGreetingPrompt(null);
+            setTrashPrompt(null);
+            setEthicsFeedback(null);
+            setAwardCelebrationQueue([]);
             setScreen('start');
           }}
           onClose={() => setActiveModal({ type: 'none' })}
+        />
+      )}
+
+      {/* Celebratory Medal Unlock Popup with Confetti & Fanfare */}
+      {awardCelebrationQueue.length > 0 && (
+        <AwardCelebrationPopup
+          key={awardCelebrationQueue[0].id}
+          award={awardCelebrationQueue[0]}
+          remainingInQueue={awardCelebrationQueue.length - 1}
+          onClose={() => {
+            soundEngine.playEquip();
+            setAwardCelebrationQueue((prev) => prev.slice(1));
+          }}
         />
       )}
     </main>

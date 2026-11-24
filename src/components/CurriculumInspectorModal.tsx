@@ -16,8 +16,11 @@ import {
   SUBJECT_META,
 } from '../data/curriculum';
 import { ALL_SUBJECTS } from '../utils/storage';
-import { speakUzbek } from '../utils/sound';
+import { speakEnglish, speakUzbek } from '../utils/sound';
 import { LessonModal } from './LessonModal';
+import { CS_GAME_TITLES } from './CsGrade1MiniGames';
+import { ENGLISH_GAME_TITLES } from './EnglishGrade1MiniGames';
+import { ALIFBE_GAME_TITLES } from './AlifbeGrade1MiniGames';
 
 interface CurriculumInspectorModalProps {
   onClose: () => void;
@@ -122,18 +125,24 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
             ? `${r.spokenPrompt} ${r.pairs.map((p) => `${p.letter} ${p.word}`).join(' ')}`
             : r.kind === 'first_letter'
             ? `${r.spokenPrompt} ${r.word} ${r.correctAnswer}`
-            : `${r.spokenPrompt} ${r.word} ${r.parts.join(' ')}`
+            : r.kind === 'build_word'
+            ? `${r.spokenPrompt} ${r.word} ${r.parts.join(' ')}`
+            : `${r.spokenPrompt} ${r.praiseText} ${r.teacherHint ?? ''}`
         ) || []),
         ...(lesson.mathRounds?.map((r) => `${r.prompt} ${r.correctAnswer}`) || []),
         ...(lesson.englishRounds?.map((r) =>
           r.kind === 'match'
             ? r.pairs.map((p) => `${p.uz} ${p.en}`).join(' ')
-            : `${r.sentence} ${r.translation} ${r.correctAnswer}`
+            : r.kind === 'fill'
+            ? `${r.sentence} ${r.translation} ${r.correctAnswer}`
+            : `${r.instruction} ${r.speakText} ${r.translation}`
         ) || []),
         ...(lesson.csRounds?.map((r) =>
           r.kind === 'order'
             ? `${r.prompt} ${r.correctSteps.join(' ')}`
-            : `${r.prompt} ${r.correctAnswer}`
+            : r.kind === 'choice'
+            ? `${r.prompt} ${r.correctAnswer}`
+            : `${r.prompt} ${r.explanation} ${r.teacherHint ?? ''}`
         ) || []),
         ...(lesson.scienceRounds?.map((r) => `${r.statement} ${r.correctAnswer} ${r.fact}`) || []),
       ]
@@ -381,7 +390,9 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                     ? 'Birinchi harfni top'
                                     : round.kind === 'build_word'
                                     ? "So'z yig'ish"
-                                    : 'Harf va rasm juftlash'}
+                                    : round.kind === 'letter_match'
+                                    ? 'Harf va rasm juftlash'
+                                    : ALIFBE_GAME_TITLES[round.kind] || 'Interaktiv Alifbe'}
                                 </span>
                                 <button
                                   type="button"
@@ -462,6 +473,24 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                 ))}
                               </div>
                             )}
+
+                            {round.kind !== 'first_letter' &&
+                              round.kind !== 'build_word' &&
+                              round.kind !== 'letter_match' && (
+                                <div className="rounded-xl bg-rose-50/70 border border-rose-200 px-3 py-2.5 text-xs sm:text-sm space-y-1">
+                                  <div className="font-semibold text-rose-900">
+                                    Interaktiv mini-o&apos;yin: {ALIFBE_GAME_TITLES[round.kind] || round.kind}
+                                  </div>
+                                  <div className="text-emerald-800 font-medium">
+                                    Maqtov: {round.praiseText}
+                                  </div>
+                                  {round.teacherHint && (
+                                    <div className="text-slate-600">
+                                      Maslahat: {round.teacherHint}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                           </div>
                         ))}
                       </div>
@@ -524,7 +553,9 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                               <span>
                                 {round.kind === 'match'
                                   ? "So'zlarni juftlash"
-                                  : "Bo'sh joyni to'ldirish"}
+                                  : round.kind === 'fill'
+                                  ? "Bo'sh joyni to'ldirish"
+                                  : ENGLISH_GAME_TITLES[round.kind] ?? "Interaktiv o'yin"}
                               </span>
                             </div>
                             <div className="text-sm font-semibold text-slate-800">
@@ -544,7 +575,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                   </div>
                                 ))}
                               </div>
-                            ) : (
+                            ) : round.kind === 'fill' ? (
                               <div className="space-y-2">
                                 <div className="text-base font-bold text-slate-900">
                                   {round.sentence}{' '}
@@ -573,6 +604,24 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                   })}
                                 </div>
                               </div>
+                            ) : (
+                              <div className="rounded-xl bg-emerald-50/80 border border-emerald-200 px-3.5 py-2.5 text-xs sm:text-sm text-emerald-950 flex flex-wrap items-center justify-between gap-2">
+                                <div className="space-y-0.5 min-w-0">
+                                  <div className="font-bold flex items-center gap-1.5">
+                                    <Gamepad2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span>{round.speakText}</span>
+                                  </div>
+                                  <div className="text-xs text-emerald-800">{round.translation}</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => speakEnglish(round.speakText)}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer shrink-0"
+                                >
+                                  <Volume2 className="w-3.5 h-3.5" />
+                                  <span>Listen</span>
+                                </button>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -592,7 +641,9 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                               <span>
                                 {round.kind === 'order'
                                   ? 'Ketma-ketlikni tartiblash'
-                                  : 'Mantiqiy tanlov'}
+                                  : round.kind === 'choice'
+                                  ? 'Mantiqiy tanlov'
+                                  : CS_GAME_TITLES[round.kind] ?? "Interaktiv o'yin"}
                               </span>
                             </div>
                             <div className="text-sm sm:text-base font-bold text-slate-900">
@@ -613,7 +664,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                   </div>
                                 ))}
                               </div>
-                            ) : (
+                            ) : round.kind === 'choice' ? (
                               <div className="space-y-2">
                                 {round.codeSnippet && (
                                   <pre className="bg-slate-900 text-violet-200 rounded-xl px-3.5 py-2.5 font-mono-num text-xs sm:text-sm overflow-x-auto">
@@ -640,6 +691,21 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                     );
                                   })}
                                 </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-xl bg-violet-50/70 border border-violet-200 px-3.5 py-2.5 text-xs sm:text-sm text-violet-900 space-y-1">
+                                <div className="font-bold flex items-center gap-1.5">
+                                  <Gamepad2 className="w-4 h-4 text-violet-600 shrink-0" />
+                                  <span>
+                                    Interaktiv vizual mini-o&apos;yin:{' '}
+                                    {CS_GAME_TITLES[round.kind] ?? round.kind}
+                                  </span>
+                                </div>
+                                {round.teacherHint && (
+                                  <div className="text-xs text-violet-800/90">
+                                    <strong>Ustoz maslahati:</strong> {round.teacherHint}
+                                  </div>
+                                )}
                               </div>
                             )}
 

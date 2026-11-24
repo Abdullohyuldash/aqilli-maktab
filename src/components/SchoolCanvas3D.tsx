@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
+  EmoteRequest,
   EquippedAccessories,
   FloorNumber,
   PlayerGender,
   SubjectId,
+  TeacherGreetingPrompt,
+  TrashKind,
+  TrashPickupPrompt,
   VirtualControlsState,
   WorldZone,
   ZoneId,
@@ -14,7 +19,18 @@ import { ELEVATOR_TRIGGER, getZonesForFloor } from '../data/curriculum';
 import { createRobloxAvatar, RobloxAvatarRig } from '../three/avatar';
 import { buildSchoolWorld, SchoolWorldHandle } from '../three/schoolWorld';
 import { soundEngine } from '../utils/sound';
-import { NpcDoorRequests, NpcUpdateFn, SchoolNPCs } from './SchoolNPCs';
+import {
+  NpcDoorRequests,
+  NpcUpdateFn,
+  SchoolNPCs,
+  TeacherGreetingOutcome,
+} from './SchoolNPCs';
+
+export interface TrashOutcome {
+  kind: 'deposited' | 'expired';
+  trashId: string;
+  trashLabel: string;
+}
 
 interface SchoolCanvas3DProps {
   currentFloor: FloorNumber;
@@ -25,16 +41,35 @@ interface SchoolCanvas3DProps {
   isPaused: boolean;
   nudgeToken: number;
   elevatorTeleportToken: number;
+  emoteRequest: EmoteRequest | null;
+  greetTriggerToken: number;
+  trashPickupToken: number;
   virtualControlsRef: React.MutableRefObject<VirtualControlsState>;
   onEnterZone: (zone: ZoneId) => void;
   onNearbyInactiveZone: (zone: ZoneId | null) => void;
   onNearbyComingSoon: (zone: WorldZone | null) => void;
+  onTeacherGreetingPromptChange: (prompt: TeacherGreetingPrompt | null) => void;
+  onTeacherGreetingOutcome: (outcome: TeacherGreetingOutcome) => void;
+  onTrashPromptChange: (prompt: TrashPickupPrompt | null) => void;
+  onTrashOutcome: (outcome: TrashOutcome) => void;
+  onEmoteEnded?: () => void;
 }
 
 const _moveVec = new THREE.Vector3();
-const _camTargetPos = new THREE.Vector3();
+const _camForward = new THREE.Vector3();
+const _camRight = new THREE.Vector3();
+const _upAxis = new THREE.Vector3(0, 1, 0);
 const _camLookAt = new THREE.Vector3();
-const _currentLookAt = new THREE.Vector3(0, 1.5, 4);
+const _prevLookAt = new THREE.Vector3();
+const _deltaLookAt = new THREE.Vector3();
+const _currentLookAt = new THREE.Vector3(0, 1.85, 5.5);
+
+const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(15);
+const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(75);
+const DEFAULT_PITCH = THREE.MathUtils.degToRad(29);
+const MIN_ZOOM_DIST = 6;
+const MAX_ZOOM_DIST = 16;
+const DEFAULT_ZOOM_DIST = 10.8;
 
 function detectSoftwareWebGL(): boolean {
   try {
@@ -60,10 +95,18 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
   isPaused,
   nudgeToken,
   elevatorTeleportToken,
+  emoteRequest,
+  greetTriggerToken,
+  trashPickupToken,
   virtualControlsRef,
   onEnterZone,
   onNearbyInactiveZone,
   onNearbyComingSoon,
+  onTeacherGreetingPromptChange,
+  onTeacherGreetingOutcome,
+  onTrashPromptChange,
+  onTrashOutcome,
+  onEmoteEnded,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [webglError, setWebglError] = useState(false);
@@ -80,14 +123,20 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
   const isPausedRef = useRef<boolean>(isPaused);
   const genderRef = useRef<PlayerGender>(gender);
   const equippedRef = useRef<EquippedAccessories>(equipped);
+  const trashPickupTokenRef = useRef<number>(trashPickupToken);
   const onEnterZoneRef = useRef(onEnterZone);
   const onNearbyRef = useRef(onNearbyInactiveZone);
   const onComingSoonRef = useRef(onNearbyComingSoon);
+  const onTrashPromptChangeRef = useRef(onTrashPromptChange);
+  const onTrashOutcomeRef = useRef(onTrashOutcome);
+  const onEmoteEndedRef = useRef(onEmoteEnded);
   const avatarRef = useRef<RobloxAvatarRig | null>(null);
   const worldRef = useRef<SchoolWorldHandle | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const playerPosRef = useRef(new THREE.Vector3(0, 0, 5.5));
   const facingYawRef = useRef<number>(Math.PI);
+  const greetTargetPosRef = useRef<{ x: number; z: number } | null>(null);
   const zoneCooldownRef = useRef(0);
   const keysRef = useRef<Record<string, boolean>>({});
 
@@ -101,6 +150,9 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
 
   useEffect(() => {
     isPausedRef.current = isPaused;
+    if (controlsRef.current) {
+      controlsRef.current.enabled = !isPaused;
+    }
     if (isPaused) {
       keysRef.current = {};
     }
@@ -121,6 +173,10 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
   }, [shirtColor]);
 
   useEffect(() => {
+    trashPickupTokenRef.current = trashPickupToken;
+  }, [trashPickupToken]);
+
+  useEffect(() => {
     onEnterZoneRef.current = onEnterZone;
   }, [onEnterZone]);
 
@@ -131,6 +187,23 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
   useEffect(() => {
     onComingSoonRef.current = onNearbyComingSoon;
   }, [onNearbyComingSoon]);
+
+  useEffect(() => {
+    onTrashPromptChangeRef.current = onTrashPromptChange;
+  }, [onTrashPromptChange]);
+
+  useEffect(() => {
+    onTrashOutcomeRef.current = onTrashOutcome;
+  }, [onTrashOutcome]);
+
+  useEffect(() => {
+    onEmoteEndedRef.current = onEmoteEnded;
+  }, [onEmoteEnded]);
+
+  useEffect(() => {
+    if (!emoteRequest) return;
+    avatarRef.current?.triggerEmote(emoteRequest.emote, emoteRequest.durationSec);
+  }, [emoteRequest]);
 
   // Swap ONLY the single active floor mesh group in Three.js for maximum FPS!
   useEffect(() => {
@@ -163,10 +236,24 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
       avatarRef.current.root.position.copy(pos);
       avatarRef.current.root.rotation.y = 0;
     }
+
+    // Place OrbitControls behind the player (inside north wall) looking South (+Z) into the new floor corridor
+    // so pressing W immediately walks forward out of the lift
     if (cameraRef.current) {
-      cameraRef.current.position.set(0, 6.9, pos.z + 9.6);
-      _currentLookAt.set(0, 1.85, pos.z - 2.4);
-      cameraRef.current.lookAt(_currentLookAt);
+      _currentLookAt.set(pos.x, pos.y + 1.85, pos.z);
+      const exitZoomDist = 6.6;
+      const exitHoriz = exitZoomDist * Math.cos(DEFAULT_PITCH);
+      cameraRef.current.position.set(
+        _currentLookAt.x,
+        _currentLookAt.y + exitZoomDist * Math.sin(DEFAULT_PITCH),
+        _currentLookAt.z - exitHoriz
+      );
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(_currentLookAt);
+        controlsRef.current.update();
+      } else {
+        cameraRef.current.lookAt(_currentLookAt);
+      }
     }
   }, [elevatorTeleportToken]);
 
@@ -208,6 +295,8 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
 
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.style.cursor = 'grab';
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -232,8 +321,14 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
       0.1,
       140
     );
-    camera.position.set(0, 7.2, 15.2);
-    _currentLookAt.set(0, 1.8, 3.5);
+    const initPos = playerPosRef.current;
+    _currentLookAt.set(initPos.x, initPos.y + 1.85, initPos.z);
+    const initHoriz = DEFAULT_ZOOM_DIST * Math.cos(DEFAULT_PITCH);
+    camera.position.set(
+      _currentLookAt.x,
+      _currentLookAt.y + DEFAULT_ZOOM_DIST * Math.sin(DEFAULT_PITCH),
+      _currentLookAt.z + initHoriz
+    );
     camera.lookAt(_currentLookAt);
     cameraRef.current = camera;
 
@@ -310,7 +405,50 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
 
     const onBlur = () => {
       keysRef.current = {};
+      renderer.domElement.style.cursor = 'grab';
     };
+
+    // Official Three.js OrbitControls configured for Roblox-style 360° mouse/touch orbit & wheel zoom
+    const canvasEl = renderer.domElement;
+    const controls = new OrbitControls(camera, canvasEl);
+    controls.target.copy(_currentLookAt);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+    controls.rotateSpeed = 0.85;
+    controls.zoomSpeed = 1.0;
+    controls.minDistance = MIN_ZOOM_DIST;
+    controls.maxDistance = MAX_ZOOM_DIST;
+    controls.minPolarAngle = MIN_POLAR_ANGLE;
+    controls.maxPolarAngle = MAX_POLAR_ANGLE;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_ROTATE,
+    };
+    controls.enabled = !isPausedRef.current;
+    controls.update();
+    controlsRef.current = controls;
+
+    const onControlStart = () => {
+      canvasEl.style.cursor = 'grabbing';
+    };
+    const onControlEnd = () => {
+      canvasEl.style.cursor = 'grab';
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    controls.addEventListener('start', onControlStart);
+    controls.addEventListener('end', onControlEnd);
+    canvasEl.addEventListener('contextmenu', onContextMenu);
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -332,6 +470,7 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
     let lastNearbyInactive: ZoneId | null = null;
     let lastComingSoonId: ZoneId | null = null;
     let jumpLatch = false;
+    let wasEmoteActive = false;
 
     const MOVE_SPEED = 8.4;
     const GRAVITY = -26.0;
@@ -342,6 +481,44 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
     let frameId = 0;
     let disposed = false;
     const npcDoorRequests: NpcDoorRequests = {};
+
+    // 2-Stage Single-Trash Cleanliness Cycle (Spawn 1 -> 20s lifetime -> Pick up -> Carry to Bin 1.8m -> 35-45s respawn)
+    const TRASH_PICKUP_DIST = 2.0;
+    const TRASH_BIN_DROP_DIST = 1.8;
+    const TRASH_LIFETIME_SEC = 20.0;
+    const TRASH_INITIAL_DELAY_SEC = 4.0;
+    const TRASH_RESPAWN_MIN_SEC = 35.0;
+    const TRASH_RESPAWN_MAX_SEC = 45.0;
+
+    const trashCycle: {
+      phase: 'cooldown' | 'on_floor' | 'holding';
+      activeFloor: FloorNumber;
+      respawnTimer: number;
+      heldTrash: { id: string; kind: TrashKind; label: string } | null;
+      lastHandledToken: number;
+      lastPromptSig: string;
+    } = {
+      phase: 'cooldown',
+      activeFloor: currentFloorRef.current,
+      respawnTimer: TRASH_INITIAL_DELAY_SEC,
+      heldTrash: null,
+      lastHandledToken: trashPickupTokenRef.current,
+      lastPromptSig: '',
+    };
+
+    const emitTrashPrompt = (next: TrashPickupPrompt | null) => {
+      const sig = next
+        ? `${next.mode}:${next.trashId}:${Math.ceil(next.timeRemainingSec * 5)}`
+        : 'none';
+      if (sig !== trashCycle.lastPromptSig) {
+        trashCycle.lastPromptSig = sig;
+        onTrashPromptChangeRef.current(next);
+      }
+    };
+
+    const clearTrashPrompt = () => {
+      emitTrashPrompt(null);
+    };
 
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -379,6 +556,11 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
       const pos = playerPosRef.current;
       const activeWorld = worldRef.current;
 
+      // Apply OrbitControls rotation/zoom/damping FIRST so camera-relative WASD uses the exact current frame's orientation
+      if (!isPausedRef.current) {
+        controls.update();
+      }
+
       if (!isPausedRef.current && activeWorld) {
         if (zoneCooldownRef.current > 0) {
           zoneCooldownRef.current = Math.max(0, zoneCooldownRef.current - dt);
@@ -394,7 +576,22 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
           (keys['KeyD'] || keys['ArrowRight'] || vCtrl.right ? 1 : 0) -
           (keys['KeyA'] || keys['ArrowLeft'] || vCtrl.left ? 1 : 0);
 
-        _moveVec.set(moveRight, 0, -moveForward);
+        // Camera-relative horizontal basis vectors:
+        // W always moves forward along the camera's gaze projected onto the XZ floor plane,
+        // D moves to the camera's right (forward × up), A to the left, S backward.
+        camera.getWorldDirection(_camForward);
+        _camForward.y = 0;
+        if (_camForward.lengthSq() > 0.0001) {
+          _camForward.normalize();
+        } else {
+          _camForward.set(0, 0, -1);
+        }
+        _camRight.crossVectors(_camForward, _upAxis).normalize();
+
+        _moveVec
+          .set(0, 0, 0)
+          .addScaledVector(_camForward, moveForward)
+          .addScaledVector(_camRight, moveRight);
         const moving = _moveVec.lengthSq() > 0.001;
 
         if (moving) {
@@ -406,7 +603,7 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
           let angleDiff = targetYaw - facingYawRef.current;
           while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
           while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-          facingYawRef.current += angleDiff * (1 - Math.exp(-13 * dt));
+          facingYawRef.current += angleDiff * (1 - Math.exp(-14 * dt));
 
           if (isGrounded) {
             stepSoundTimer -= dt;
@@ -417,6 +614,17 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
           }
         } else {
           stepSoundTimer = 0.08;
+          // Gently orient avatar toward Ustoz when greeting them, otherwise toward camera during polite emotes
+          if (isGrounded && avatar.isEmoteActive()) {
+            const greetTarget = greetTargetPosRef.current;
+            const desiredYaw = greetTarget
+              ? Math.atan2(greetTarget.x - pos.x, greetTarget.z - pos.z)
+              : Math.atan2(-_camForward.x, -_camForward.z);
+            let angleDiff = desiredYaw - facingYawRef.current;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            facingYawRef.current += angleDiff * (1 - Math.exp(-9 * dt));
+          }
         }
 
         const wantJump = Boolean(keys['Space'] || vCtrl.jump);
@@ -515,29 +723,168 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
           }
         }
 
-        npcUpdateRef.current?.(dt, elapsed, activeSubjectRef.current, npcDoorRequests);
+        // 2-Stage Single-Trash Cleanliness Cycle
+        if (trashCycle.activeFloor !== activeWorld.floor) {
+          trashCycle.activeFloor = activeWorld.floor;
+          if (trashCycle.phase === 'on_floor') {
+            trashCycle.phase = 'cooldown';
+            trashCycle.respawnTimer = 4.0;
+            clearTrashPrompt();
+          }
+          trashCycle.lastHandledToken = trashPickupTokenRef.current;
+        }
+
+        if (trashCycle.phase === 'cooldown') {
+          trashCycle.lastHandledToken = trashPickupTokenRef.current;
+          clearTrashPrompt();
+          trashCycle.respawnTimer -= dt;
+          if (trashCycle.respawnTimer <= 0) {
+            activeWorld.spawnRandomTrash(pos);
+            trashCycle.phase = 'on_floor';
+          }
+        } else if (trashCycle.phase === 'on_floor') {
+          const activeTrash = activeWorld.getActiveTrash();
+          if (!activeTrash) {
+            trashCycle.phase = 'cooldown';
+            trashCycle.respawnTimer =
+              TRASH_RESPAWN_MIN_SEC +
+              Math.random() * (TRASH_RESPAWN_MAX_SEC - TRASH_RESPAWN_MIN_SEC);
+            clearTrashPrompt();
+          } else {
+            activeTrash.lifetimeRemaining -= dt;
+            const distToTrash = Math.hypot(pos.x - activeTrash.x, pos.z - activeTrash.z);
+            const pickupTriggered = trashPickupTokenRef.current !== trashCycle.lastHandledToken;
+
+            if (pickupTriggered) {
+              trashCycle.lastHandledToken = trashPickupTokenRef.current;
+              if (distToTrash <= TRASH_PICKUP_DIST + 0.35) {
+                const picked = {
+                  id: activeTrash.id,
+                  kind: activeTrash.kind,
+                  label: activeTrash.label,
+                };
+                activeWorld.clearActiveTrash();
+                trashCycle.phase = 'holding';
+                trashCycle.heldTrash = picked;
+                avatar.setHeldTrash(picked.kind);
+                soundEngine.playEquip();
+                emitTrashPrompt({
+                  mode: 'carrying',
+                  trashId: picked.id,
+                  trashKind: picked.kind,
+                  trashLabel: picked.label,
+                  timeRemainingSec: 0,
+                  totalTimeSec: TRASH_LIFETIME_SEC,
+                });
+              }
+            } else if (activeTrash.lifetimeRemaining <= 0) {
+              const expiredId = activeTrash.id;
+              const expiredLabel = activeTrash.label;
+              activeWorld.clearActiveTrash();
+              trashCycle.phase = 'cooldown';
+              trashCycle.respawnTimer =
+                TRASH_RESPAWN_MIN_SEC +
+                Math.random() * (TRASH_RESPAWN_MAX_SEC - TRASH_RESPAWN_MIN_SEC);
+              clearTrashPrompt();
+              onTrashOutcomeRef.current({
+                kind: 'expired',
+                trashId: expiredId,
+                trashLabel: expiredLabel,
+              });
+            } else if (distToTrash <= TRASH_PICKUP_DIST) {
+              emitTrashPrompt({
+                mode: 'pickup',
+                trashId: activeTrash.id,
+                trashKind: activeTrash.kind,
+                trashLabel: activeTrash.label,
+                timeRemainingSec: Math.max(0, activeTrash.lifetimeRemaining),
+                totalTimeSec: activeTrash.totalLifetime,
+              });
+            } else {
+              clearTrashPrompt();
+            }
+          }
+        } else if (trashCycle.phase === 'holding') {
+          const held = trashCycle.heldTrash;
+          if (!held) {
+            trashCycle.phase = 'cooldown';
+            trashCycle.respawnTimer =
+              TRASH_RESPAWN_MIN_SEC +
+              Math.random() * (TRASH_RESPAWN_MAX_SEC - TRASH_RESPAWN_MIN_SEC);
+            avatar.setHeldTrash(null);
+            clearTrashPrompt();
+          } else {
+            let minBinDist = Infinity;
+            for (let i = 0; i < activeWorld.trashBins.length; i++) {
+              const bin = activeWorld.trashBins[i];
+              const d = Math.hypot(pos.x - bin.x, pos.z - bin.z);
+              if (d < minBinDist) minBinDist = d;
+            }
+            const nearBin = minBinDist <= TRASH_BIN_DROP_DIST;
+            const dropTriggered = trashPickupTokenRef.current !== trashCycle.lastHandledToken;
+
+            if (dropTriggered) {
+              trashCycle.lastHandledToken = trashPickupTokenRef.current;
+              if (nearBin) {
+                trashCycle.heldTrash = null;
+                trashCycle.phase = 'cooldown';
+                trashCycle.respawnTimer =
+                  TRASH_RESPAWN_MIN_SEC +
+                  Math.random() * (TRASH_RESPAWN_MAX_SEC - TRASH_RESPAWN_MIN_SEC);
+                avatar.setHeldTrash(null);
+                clearTrashPrompt();
+                onTrashOutcomeRef.current({
+                  kind: 'deposited',
+                  trashId: held.id,
+                  trashLabel: held.label,
+                });
+              }
+            } else {
+              emitTrashPrompt({
+                mode: nearBin ? 'dropoff' : 'carrying',
+                trashId: held.id,
+                trashKind: held.kind,
+                trashLabel: held.label,
+                timeRemainingSec: 0,
+                totalTimeSec: TRASH_LIFETIME_SEC,
+              });
+            }
+          }
+        }
+
+        npcUpdateRef.current?.(dt, elapsed, activeSubjectRef.current, pos, npcDoorRequests);
       } else {
         avatar.updateAnimation(dt, 0, false, pos.y);
       }
 
+      const nowEmoteActive = avatar.isEmoteActive();
+      if (wasEmoteActive && !nowEmoteActive) {
+        greetTargetPosRef.current = null;
+        onEmoteEndedRef.current?.();
+      }
+      wasEmoteActive = nowEmoteActive;
+
       if (activeWorld) {
-        activeWorld.updateWorld(dt, elapsed, activeSubjectRef.current, pos, npcDoorRequests);
+        activeWorld.updateWorld(
+          dt,
+          elapsed,
+          activeSubjectRef.current,
+          pos,
+          npcDoorRequests,
+          trashCycle.phase === 'holding'
+        );
       }
 
-      _camTargetPos.set(
-        THREE.MathUtils.clamp(pos.x * 0.85, -11.2, 11.2),
-        6.9 + pos.y * 0.35,
-        THREE.MathUtils.clamp(pos.z + 9.6, -2.5, 20.5)
-      );
-      camera.position.x = THREE.MathUtils.damp(camera.position.x, _camTargetPos.x, 5.5, dt);
-      camera.position.y = THREE.MathUtils.damp(camera.position.y, _camTargetPos.y, 5.5, dt);
-      camera.position.z = THREE.MathUtils.damp(camera.position.z, _camTargetPos.z, 5.5, dt);
+      // Smoothly follow moving player avatar by translating camera + OrbitControls target together
+      _prevLookAt.copy(_currentLookAt);
+      _camLookAt.set(pos.x, pos.y + 1.85, pos.z);
+      _currentLookAt.x = THREE.MathUtils.damp(_currentLookAt.x, _camLookAt.x, 10, dt);
+      _currentLookAt.y = THREE.MathUtils.damp(_currentLookAt.y, _camLookAt.y, 10, dt);
+      _currentLookAt.z = THREE.MathUtils.damp(_currentLookAt.z, _camLookAt.z, 10, dt);
+      _deltaLookAt.subVectors(_currentLookAt, _prevLookAt);
 
-      _camLookAt.set(pos.x, 1.85 + pos.y * 0.45, pos.z - 2.4);
-      _currentLookAt.x = THREE.MathUtils.damp(_currentLookAt.x, _camLookAt.x, 7.5, dt);
-      _currentLookAt.y = THREE.MathUtils.damp(_currentLookAt.y, _camLookAt.y, 7.5, dt);
-      _currentLookAt.z = THREE.MathUtils.damp(_currentLookAt.z, _camLookAt.z, 7.5, dt);
-      camera.lookAt(_currentLookAt);
+      camera.position.add(_deltaLookAt);
+      controls.target.copy(_currentLookAt);
 
       renderer.render(scene, camera);
 
@@ -552,8 +899,14 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
 
     return () => {
       disposed = true;
+      clearTrashPrompt();
       cancelAnimationFrame(frameId);
       clearTimeout(frameId);
+      controls.removeEventListener('start', onControlStart);
+      controls.removeEventListener('end', onControlEnd);
+      controls.dispose();
+      controlsRef.current = null;
+      canvasEl.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
@@ -594,6 +947,14 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
         castShadow={sceneHandle?.castShadow ?? false}
         currentFloor={currentFloor}
         npcUpdateRef={npcUpdateRef}
+        greetTriggerToken={greetTriggerToken}
+        onTeacherGreetingPromptChange={onTeacherGreetingPromptChange}
+        onTeacherGreetingOutcome={(outcome) => {
+          if (outcome.kind === 'reward') {
+            greetTargetPosRef.current = { x: outcome.teacherX, z: outcome.teacherZ };
+          }
+          onTeacherGreetingOutcome(outcome);
+        }}
       />
     </>
   );
