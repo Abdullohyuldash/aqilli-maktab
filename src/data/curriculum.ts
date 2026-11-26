@@ -5,6 +5,7 @@ import { ENGLISH_GRADE_1_LESSONS } from './englishGrade1';
 import { CS_GRADE_1_LESSONS } from './csGrade1';
 import { SCIENCE_GRADE_1_LESSONS } from './scienceGrade1';
 import { ALIFBE_GRADE_1_LESSONS } from './alifbeGrade1';
+import { PE_GRADE_1_LESSONS } from './peGrade1';
 
 export interface FloorMeta {
   floor: FloorNumber;
@@ -45,8 +46,8 @@ export const FLOOR_META: Record<FloorNumber, FloorMeta> = {
   2: {
     floor: 2,
     title: '2-qavat',
-    subtitle: 'Tillar va Ijtimoiy fanlar',
-    roomsSummary: 'Ingliz tili, Ona tili, Tarix',
+    subtitle: 'Tillar, Sport va Ijtimoiy fanlar',
+    roomsSummary: 'Ingliz tili, Sport zali, Ona tili, Tarix',
     accentColor: '#059669',
     accentHexNum: 0x10b981,
     wallColorNum: 0xf6fbf8,
@@ -152,6 +153,18 @@ export const SUBJECT_META: Record<SubjectId, SubjectMeta> = {
     borderTint: '#FED7AA',
     notificationText: 'Hozir Tabiiy fanlar darsi! Tabiiy fanlar xonasiga kiring!',
   },
+  pe: {
+    id: 'pe',
+    floor: 2,
+    name: 'Jismoniy tarbiya',
+    roomName: 'Sport zali',
+    teacherName: 'Ustoz Rustam',
+    teacherTitle: 'Jismoniy tarbiya o‘qituvchisi',
+    color: '#0284C7',
+    bgTint: '#F0F9FF',
+    borderTint: '#BAE6FD',
+    notificationText: 'Hozir Jismoniy tarbiya darsi! Sport zaliga kiring!',
+  },
 };
 
 export const ELEVATOR_TRIGGER = {
@@ -256,6 +269,19 @@ export const WORLD_ZONES: WorldZone[] = [
     z: -2.2,
     triggerX: -12.0,
     triggerZ: -2.2,
+    triggerRadius: 2.75,
+    facingAngle: Math.PI / 2,
+  },
+  {
+    id: 'pe',
+    floor: 2,
+    title: 'Sport zali',
+    shortTitle: 'Sport zali',
+    color: '#0284C7',
+    x: -14.8,
+    z: 5.4,
+    triggerX: -12.0,
+    triggerZ: 5.4,
     triggerRadius: 2.75,
     facingAngle: Math.PI / 2,
   },
@@ -963,6 +989,124 @@ export interface ScienceRound {
   ecoData?: EcoPatrolData;
 }
 
+export type PeGameType =
+  | 'line_formation'
+  | 'number_reaction'
+  | 'train_route'
+  | 'warmup_rhythm'
+  | 'day_night_freeze'
+  | 'tag_chase'
+  | 'relay_race'
+  | 'gymnastics_balance'
+  | 'jump_power'
+  | 'ball_throw'
+  | 'checkers_intro';
+
+export interface PeLineFormationData {
+  mode: 'order_steps' | 'command_pick';
+  steps?: { id: string; emoji: string; label: string }[];
+  commandBadge?: string;
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface PeNumberReactionData {
+  cues: {
+    targetNumber: number;
+    label: string;
+    emoji: string;
+    actionText: string;
+  }[];
+  buttons: { number: number; label: string; emoji: string }[];
+}
+
+export interface PeTrainRouteData {
+  stations: { id: string; emoji: string; label: string }[];
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+  mode: 'build_route' | 'steer_obstacle';
+}
+
+export interface PeWarmupRhythmData {
+  poses: { id: string; emoji: string; label: string; countCue: string }[];
+  mode: 'sequence' | 'rhythm_tap';
+  targetTaps?: number;
+}
+
+export interface PeDayNightFreezeData {
+  requiredCycles: number;
+  dayCommand: string;
+  nightCommand: string;
+}
+
+export interface PeTagChaseData {
+  mode: 'escape_grid' | 'dodge_ball';
+  targetSteps: number;
+  chaserEmoji: string;
+  chaserLabel: string;
+  goalEmoji: string;
+  goalLabel: string;
+}
+
+export interface PeRelayRaceData {
+  mode: 'baton_pass' | 'hurdle_run' | 'shuttle_run' | 'ring_relay';
+  runnerEmoji: string;
+  itemEmoji: string;
+  itemLabel: string;
+  targetSteps: number;
+}
+
+export interface PeGymnasticsBalanceData {
+  mode: 'beam_hold' | 'mat_sequence' | 'posture_pick';
+  steps?: { id: string; emoji: string; label: string }[];
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+  targetBalanceTicks?: number;
+  poseLabel?: string;
+}
+
+export interface PeJumpPowerData {
+  mode: 'power_meter' | 'rope_timing';
+  sweetMin?: number;
+  sweetMax?: number;
+  targetJumps?: number;
+  goalLabel: string;
+  athleteEmoji: string;
+}
+
+export interface PeBallThrowData {
+  mode: 'aim_timing' | 'angle_pick';
+  targetLabel: string;
+  targetEmoji: string;
+  ballEmoji: string;
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface PeCheckersIntroData {
+  mode: 'move_diagonal' | 'capture_jump' | 'rule_pick';
+  playerPos?: { row: number; col: number };
+  enemyPos?: { row: number; col: number };
+  targetSquares?: { row: number; col: number }[];
+  choices?: { id: string; emoji: string; label: string; isCorrect: boolean }[];
+}
+
+export interface PeRound {
+  kind: PeGameType | 'quiz';
+  prompt: string;
+  options: string[];
+  correctAnswer: string;
+  fact: string;
+  teacherHint?: string;
+  lineData?: PeLineFormationData;
+  reactionData?: PeNumberReactionData;
+  trainData?: PeTrainRouteData;
+  warmupData?: PeWarmupRhythmData;
+  dayNightData?: PeDayNightFreezeData;
+  tagData?: PeTagChaseData;
+  relayData?: PeRelayRaceData;
+  gymData?: PeGymnasticsBalanceData;
+  jumpData?: PeJumpPowerData;
+  throwData?: PeBallThrowData;
+  checkersData?: PeCheckersIntroData;
+}
+
 export interface AlifbeCard {
   letter: string;
   emoji: string;
@@ -1115,6 +1259,7 @@ export interface LessonPlan {
   csGameType?: CsGameType;
   englishGameType?: EnglishGameType;
   alifbeGameType?: AlifbeGameType;
+  peGameType?: PeGameType;
   topicTitle: string;
   ruleTitle: string;
   explanation: string;
@@ -1131,6 +1276,7 @@ export interface LessonPlan {
   englishRounds?: EnglishRound[];
   csRounds?: CsRound[];
   scienceRounds?: ScienceRound[];
+  peRounds?: PeRound[];
 }
 
 const LESSONS: Record<SubjectId, Record<DifficultyTier, LessonPlan[]>> = {
@@ -1685,6 +1831,188 @@ const LESSONS: Record<SubjectId, Record<DifficultyTier, LessonPlan[]>> = {
             options: ["To'g'ri", "Noto'g'ri"],
             correctAnswer: "Noto'g'ri",
             fact: 'Havoning 78% ini azot (N₂), taxminan 21% ini esa kislorod (O₂) tashkil qiladi!',
+          },
+        ],
+      },
+    ],
+  },
+  pe: {
+    elementary: [
+      {
+        subject: 'pe',
+        tier: 'elementary',
+        peGameType: 'warmup_rhythm',
+        topicTitle: "Ertalabki Chiniqish va Chaqqonlik",
+        ruleTitle: 'Badantarbiya va harakat madaniyati',
+        explanation:
+          "Har bir mashg‘ulot badan qizdirish bilan boshlanadi: bosh, yelka, qo‘l va oyoq mashqlaridan so‘ng estafeta va sakrash o‘yinlari bajariladi.",
+        formulaOrRule: '🏃 Isinish → 🤸 Muvozanat → 🏆 Estafeta',
+        exampleProblem: 'Mashqlarni bajarishdan oldin nima qilishimiz kerak?',
+        exampleSolution: 'Avval yengil badantarbiya qilib mushaklarni qizdiramiz!',
+        peRounds: [
+          {
+            kind: 'warmup_rhythm',
+            prompt: 'Badantarbiya bosqichlarini tartib bilan bajar!',
+            options: ['Bajarildi!'],
+            correctAnswer: 'Bajarildi!',
+            fact: 'To‘g‘ri qizdirilgan mushaklar bilan yugurish va sakrash oson va xavfsiz bo‘ladi.',
+            teacherHint: 'Avval bosh va yelka, keyin gavda, oxirida oyoqlarni qizdir!',
+            warmupData: {
+              mode: 'sequence',
+              poses: [
+                { id: 'e1', emoji: '🙆', label: 'Bosh va yelka mashqi', countCue: '1-2' },
+                { id: 'e2', emoji: '🤸', label: 'Gavda egilishi', countCue: '3-4' },
+                { id: 'e3', emoji: '🦵', label: 'O‘tirib-turish', countCue: '5-6' },
+              ],
+            },
+          },
+          {
+            kind: 'relay_race',
+            prompt: 'Estafeta tayoqchasi bilan marraga tez yugur!',
+            options: ['Marraga yetdim!'],
+            correctAnswer: 'Marraga yetdim!',
+            fact: 'Estafeta jamoaviy birdamlik va tezkorlikni oshiradi.',
+            teacherHint: 'Chap va o‘ng oyoq tugmalarini tez-tez bosing!',
+            relayData: {
+              mode: 'baton_pass',
+              runnerEmoji: '🏃',
+              itemEmoji: '🥢',
+              itemLabel: 'Estafeta tayoqchasi',
+              targetSteps: 6,
+            },
+          },
+          {
+            kind: 'jump_power',
+            prompt: 'Kuch shkalasini yashil zonada ushlab uzunlikka sakra!',
+            options: ['Uzoqqa sakradim!'],
+            correctAnswer: 'Uzoqqa sakradim!',
+            fact: 'Sakrash oyoq kuchini va chaqqonlikni rivojlantiradi.',
+            teacherHint: 'Yashil zonaga kelganda «SAKRA!» tugmasini bosing!',
+            jumpData: {
+              mode: 'power_meter',
+              sweetMin: 40,
+              sweetMax: 78,
+              goalLabel: 'Qum maydonchasi',
+              athleteEmoji: '🦘',
+            },
+          },
+        ],
+      },
+      ...PE_GRADE_1_LESSONS,
+    ],
+    middle: [
+      {
+        subject: 'pe',
+        tier: 'middle',
+        peGameType: 'relay_race',
+        topicTitle: 'Yengil Atletika, Muvozanat va Sport O‘yinlari',
+        ruleTitle: 'Tezkorlik, chidamlilik va aniqlik',
+        explanation:
+          "5–8-sinflarda qisqa masofaga start texnikasi, estafeta uzatish zonasi, muvozanat va basketbol savatiga aniq tashlash ko‘nikmalari takomillashtiriladi.",
+        formulaOrRule: '⚡ Tez start · 🏀 Aniq tashlash · ⚖️ Muvozanat',
+        exampleProblem: 'Basketbol to‘pini savatga otishda qanday trayektoriya samarali?',
+        exampleSolution: 'Yuqoriga yo‘naltirilgan yumshoq yoy trayektoriyasi!',
+        peRounds: [
+          {
+            kind: 'relay_race',
+            prompt: 'Mokisimon yugurishda 7 qadamda marraga yetib kel!',
+            options: ['Marraga yetdim!'],
+            correctAnswer: 'Marraga yetdim!',
+            fact: 'Mokisimon yugurish start tezkorligi va burilish texnikasini o‘lchaydi.',
+            teacherHint: 'Chap va o‘ng tugmalarni navbatma-navbat tez bos!',
+            relayData: {
+              mode: 'shuttle_run',
+              runnerEmoji: '🏃‍♂️',
+              itemEmoji: '🏁',
+              itemLabel: 'Finish chizig‘i',
+              targetSteps: 7,
+            },
+          },
+          {
+            kind: 'ball_throw',
+            prompt: 'Mo‘ljal markazga kelganda basketbol to‘pini savatga tashla!',
+            options: ['Savatga tushdi!'],
+            correctAnswer: 'Savatga tushdi!',
+            fact: 'To‘pni bilak harakati bilan yoy shaklida tashlash aniqlikni oshiradi.',
+            teacherHint: 'Yashil markazda «OTISH!» tugmasini bos!',
+            throwData: {
+              mode: 'aim_timing',
+              targetLabel: 'Basketbol savati',
+              targetEmoji: '🏀',
+              ballEmoji: '🏀',
+            },
+          },
+          {
+            kind: 'gymnastics_balance',
+            prompt: 'Gimnastika muvozanat ko‘rsatkichini yashil zonada ushla!',
+            options: ['Muvozanat saqlandi!'],
+            correctAnswer: 'Muvozanat saqlandi!',
+            fact: 'Muvozanat mashqlari tana koordinatsiyasini kuchaytiradi.',
+            teacherHint: 'Chap va O‘ng tugmalar bilan strelkani markazda tut!',
+            gymData: {
+              mode: 'beam_hold',
+              targetBalanceTicks: 7,
+              poseLabel: 'Sport muvozanati',
+            },
+          },
+        ],
+      },
+    ],
+    high: [
+      {
+        subject: 'pe',
+        tier: 'high',
+        peGameType: 'jump_power',
+        topicTitle: 'Atletika, Taktika va Jismoniy Tayyorgarlik',
+        ruleTitle: 'Kuch, reaksiya va strategiya',
+        explanation:
+          "Yuqori sinflarda tezkor reaksiya, portlovchi sakrash kuchi, sport o‘yinlari taktikasi hamda intellektual shashka fikrlashi uyg‘unlashtiriladi.",
+        formulaOrRule: '⚡ Reaksiya · 💥 Portlovchi kuch · ♟️ Taktika',
+        exampleProblem: 'Sakrash natijasini yaxshilash uchun qaysi omillar muhim?',
+        exampleSolution: 'Oyoq itarilish kuchi, qo‘l siltash tezligi va to‘g‘ri burchak!',
+        peRounds: [
+          {
+            kind: 'jump_power',
+            prompt: 'Portlovchi kuch: ko‘rsatkichni yashil pik zonasida to‘xtatib rekord sakra!',
+            options: ['Rekord sakrash!'],
+            correctAnswer: 'Rekord sakrash!',
+            fact: '45 daraja atrofidagi uchish burchagi uzunlikka sakrashda eng uzoq masofani beradi.',
+            teacherHint: 'Yashil pik zonani nishonga oling!',
+            jumpData: {
+              mode: 'power_meter',
+              sweetMin: 46,
+              sweetMax: 74,
+              goalLabel: 'Chempionlik marrasi',
+              athleteEmoji: '🏆',
+            },
+          },
+          {
+            kind: 'ball_throw',
+            prompt: 'Nishonga aniq zarba ber!',
+            options: ['Nishonga tegdi!'],
+            correctAnswer: 'Nishonga tegdi!',
+            fact: 'Sportda diqqatni jamlash va nafasni boshqarish aniqlik garovidir.',
+            teacherHint: 'Nishon markazga kelganda bos!',
+            throwData: {
+              mode: 'aim_timing',
+              targetLabel: 'Sport nishoni',
+              targetEmoji: '🎯',
+              ballEmoji: '🏀',
+            },
+          },
+          {
+            kind: 'checkers_intro',
+            prompt: 'Taktik kombinatsiya: raqib donasi ustidan sakrab urib ol!',
+            options: ['Dona urib olindi!'],
+            correctAnswer: 'Dona urib olindi!',
+            fact: 'Aqliy sport va jismoniy tarbiya birgalikda mukammal sportchini shakllantiradi.',
+            teacherHint: 'Raqib donasi ortidagi bo‘sh qora katakni tanla!',
+            checkersData: {
+              mode: 'capture_jump',
+              playerPos: { row: 2, col: 1 },
+              enemyPos: { row: 1, col: 2 },
+              targetSquares: [{ row: 0, col: 3 }],
+            },
           },
         ],
       },

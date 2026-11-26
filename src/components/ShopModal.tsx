@@ -84,6 +84,38 @@ const ShopItemIllustration: React.FC<{ id: ShopItemId }> = ({ id }) => {
           <path d="M28 47 L52 47 L56 65 L24 65 Z" fill="#FFFFFF" stroke="#E2E8F0" strokeWidth="1.5" />
         </svg>
       );
+    case 'sport_uniform':
+      return (
+        <svg viewBox="0 0 80 80" className="w-16 h-16" aria-hidden="true">
+          <path d="M22 18 L32 13 L48 13 L58 18 L68 32 L58 38 L55 33 L55 66 L25 66 L25 33 L22 38 L12 32 Z" fill="#0284C7" />
+          <rect x="25" y="45" width="30" height="21" fill="#0F172A" />
+          <rect x="25" y="40" width="30" height="5" fill="#F8FAFC" />
+          <rect x="32" y="11" width="16" height="6" rx="2" fill="#0F172A" />
+          <rect x="32" y="11" width="16" height="2" fill="#F8FAFC" />
+          <rect x="38.5" y="17" width="3" height="49" fill="#F8FAFC" />
+          <line x1="15" y1="30" x2="23" y2="20" stroke="#F8FAFC" strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="65" y1="30" x2="57" y2="20" stroke="#F8FAFC" strokeWidth="2.5" strokeLinecap="round" />
+          <circle cx="48" cy="29" r="3.6" fill="#F59E0B" />
+        </svg>
+      );
+    case 'ceremonial_uniform':
+      return (
+        <svg viewBox="0 0 80 80" className="w-16 h-16" aria-hidden="true">
+          <path d="M21 18 L32 13 L48 13 L59 18 L69 33 L59 39 L56 34 L56 67 L24 67 L24 34 L21 39 L11 33 Z" fill="#F8FAFC" stroke="#CBD5E1" strokeWidth="2" />
+          <rect x="32" y="11" width="16" height="6" rx="1.5" fill="#1E3A8A" />
+          <rect x="32" y="11" width="16" height="2" fill="#F59E0B" />
+          <rect x="21" y="15" width="10" height="4.5" rx="1.5" fill="#F59E0B" />
+          <rect x="49" y="15" width="10" height="4.5" rx="1.5" fill="#F59E0B" />
+          <polygon points="48,17 55,21 31,64 24,60" fill="#0EA5E9" />
+          <polygon points="50.5,18.5 53.5,20.5 29.5,63 26.5,61" fill="#FFFFFF" />
+          <polygon points="52.5,20 56,22 32,65 28.5,63" fill="#10B981" />
+          <line x1="50" y1="18" x2="26" y2="61" stroke="#DC2626" strokeWidth="1.2" />
+          <circle cx="28" cy="61" r="4" fill="#F59E0B" />
+          <circle cx="46" cy="37" r="2.2" fill="#F59E0B" />
+          <circle cx="46" cy="48" r="2.2" fill="#F59E0B" />
+          <rect x="24" y="63" width="32" height="3.5" fill="#F59E0B" />
+        </svg>
+      );
     case 'chust_doppi':
       return (
         <svg viewBox="0 0 80 80" className="w-16 h-16" aria-hidden="true">
@@ -262,7 +294,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
   return (
     <AutoFitModal overlayClassName="z-40 bg-slate-900/60">
-      <div className="w-[min(920px,94vw)] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+      <div className="w-[min(960px,94vw)] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4 bg-gradient-to-r from-amber-50 via-white to-sky-50">
           <div className="flex items-center gap-3">
@@ -348,10 +380,14 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         </div>
 
         {/* Filtered Item Grid (2 or 3 columns, zero scroll!) */}
-        <div className="p-5 sm:p-6 bg-white">
+        <div className={tabItems.length > 3 ? 'p-4 sm:p-5 bg-white' : 'p-5 sm:p-6 bg-white'}>
           <div
-            className={`grid gap-4 ${
-              tabItems.length === 2 ? 'grid-cols-2 max-w-[610px] mx-auto' : 'grid-cols-3'
+            className={`grid ${
+              tabItems.length === 2
+                ? 'grid-cols-2 gap-4 max-w-[610px] mx-auto'
+                : tabItems.length > 3
+                ? 'grid-cols-3 gap-3.5'
+                : 'grid-cols-3 gap-4'
             }`}
           >
             {tabItems.map((item) => {
@@ -362,14 +398,20 @@ export const ShopModal: React.FC<ShopModalProps> = ({
               return (
                 <div
                   key={item.id}
-                  className={`rounded-2xl border-2 p-4 flex flex-col justify-between gap-4 transition-colors ${
+                  className={`rounded-2xl border-2 flex flex-col justify-between transition-colors ${
+                    tabItems.length > 3 ? 'p-3.5 gap-3' : 'p-4 gap-4'
+                  } ${
                     equipped
                       ? 'border-emerald-500 bg-emerald-50/40 shadow-sm'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >
                   <div>
-                    <div className="relative h-28 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-3.5">
+                    <div
+                      className={`relative rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center ${
+                        tabItems.length > 3 ? 'h-24 mb-2.5' : 'h-28 mb-3.5'
+                      }`}
+                    >
                       <ShopItemIllustration id={item.id} />
                       {equipped && (
                         <span className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[11px] font-bold shadow-sm">

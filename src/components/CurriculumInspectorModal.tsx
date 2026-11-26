@@ -21,6 +21,7 @@ import { LessonModal } from './LessonModal';
 import { CS_GAME_TITLES } from './CsGrade1MiniGames';
 import { ENGLISH_GAME_TITLES } from './EnglishGrade1MiniGames';
 import { ALIFBE_GAME_TITLES } from './AlifbeGrade1MiniGames';
+import { PE_GAME_TITLES } from './PeGrade1MiniGames';
 
 interface CurriculumInspectorModalProps {
   onClose: () => void;
@@ -47,6 +48,8 @@ function getLessonGameTypeLabel(subject: SubjectId): string {
       return 'Algoritm bloklarini tartiblash va Mantiq';
     case 'science':
       return "To'g'ri / Noto'g'ri va Tezkor viktorina";
+    case 'pe':
+      return 'Sport zali: Saf, Estafeta, Gimnastika va Harakatli o‘yinlar';
   }
 }
 
@@ -57,6 +60,7 @@ function getLessonRoundCount(lesson: LessonPlan): number {
     lesson.englishRounds?.length ||
     lesson.csRounds?.length ||
     lesson.scienceRounds?.length ||
+    lesson.peRounds?.length ||
     0
   );
 }
@@ -87,6 +91,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
       english: getAllLessonsBySubject('english'),
       cs: getAllLessonsBySubject('cs'),
       science: getAllLessonsBySubject('science'),
+      pe: getAllLessonsBySubject('pe'),
     };
   }, []);
 
@@ -97,6 +102,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
       ...allBySubject.english,
       ...allBySubject.cs,
       ...allBySubject.science,
+      ...allBySubject.pe,
     ];
     const totalRounds = all.reduce((sum, l) => sum + getLessonRoundCount(l), 0);
     return { totalLessons: all.length, totalRounds };
@@ -145,6 +151,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
             : `${r.prompt} ${r.explanation} ${r.teacherHint ?? ''}`
         ) || []),
         ...(lesson.scienceRounds?.map((r) => `${r.statement} ${r.correctAnswer} ${r.fact}`) || []),
+        ...(lesson.peRounds?.map((r) => `${r.prompt} ${r.correctAnswer} ${r.fact}`) || []),
       ]
         .join(' ')
         .toLowerCase();
@@ -188,7 +195,7 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
           {/* Subject Tabs + Level Filter + Search */}
           <div className="px-5 sm:px-6 py-3.5 border-b border-slate-200 bg-white flex flex-col gap-3">
             {/* Subject Switcher */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {ALL_SUBJECTS.map((subj) => {
                 const meta = SUBJECT_META[subj];
                 const count = allBySubject[subj].length;
@@ -755,6 +762,49 @@ export const CurriculumInspectorModal: React.FC<CurriculumInspectorModalProps> =
                                   </div>
                                 );
                               })}
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              <strong>Fakt:</strong> {round.fact}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* PE ROUNDS */}
+                    {activeLesson.peRounds && (
+                      <div className="space-y-3">
+                        {activeLesson.peRounds.map((round, i) => (
+                          <div
+                            key={i}
+                            className="rounded-2xl border border-slate-200 p-4 space-y-2.5 bg-slate-50/50"
+                          >
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                              <span className="font-bold text-slate-700">Raund {i + 1}</span>
+                              <span>
+                                {round.kind !== 'quiz'
+                                  ? PE_GAME_TITLES[round.kind] ?? 'Sport o‘yini'
+                                  : 'Tezkor mashq'}
+                              </span>
+                            </div>
+                            <div className="text-sm sm:text-base font-bold text-slate-900">
+                              {round.prompt}
+                            </div>
+                            <div className="rounded-xl bg-sky-50/80 border border-sky-200 px-3.5 py-2.5 text-xs sm:text-sm text-sky-950 space-y-1">
+                              <div className="font-bold flex items-center gap-1.5">
+                                <Gamepad2 className="w-4 h-4 text-sky-600 shrink-0" />
+                                <span>
+                                  Interaktiv sport o&apos;yini:{' '}
+                                  {round.kind !== 'quiz'
+                                    ? PE_GAME_TITLES[round.kind] ?? round.kind
+                                    : round.kind}
+                                </span>
+                              </div>
+                              {round.teacherHint && (
+                                <div className="text-xs text-sky-800/90">
+                                  <strong>Ustoz Rustam maslahati:</strong> {round.teacherHint}
+                                </div>
+                              )}
                             </div>
                             <div className="text-xs text-slate-600">
                               <strong>Fakt:</strong> {round.fact}

@@ -18,6 +18,7 @@ import {
 import { ELEVATOR_TRIGGER, getZonesForFloor } from '../data/curriculum';
 import { createRobloxAvatar, RobloxAvatarRig } from '../three/avatar';
 import { buildSchoolWorld, SchoolWorldHandle } from '../three/schoolWorld';
+import { buildGymWorld, GymWorldHandle } from '../three/gymWorld';
 import { soundEngine } from '../utils/sound';
 import {
   NpcDoorRequests,
@@ -38,6 +39,7 @@ interface SchoolCanvas3DProps {
   shirtColor: string;
   equipped: EquippedAccessories;
   activeSubject: SubjectId;
+  inGym: boolean;
   isPaused: boolean;
   nudgeToken: number;
   elevatorTeleportToken: number;
@@ -92,6 +94,7 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
   shirtColor,
   equipped,
   activeSubject,
+  inGym,
   isPaused,
   nudgeToken,
   elevatorTeleportToken,
@@ -205,24 +208,52 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
     avatarRef.current?.triggerEmote(emoteRequest.emote, emoteRequest.durationSec);
   }, [emoteRequest]);
 
-  // Swap ONLY the single active floor mesh group in Three.js for maximum FPS!
+  const inGymRef = useRef<boolean>(inGym);
+  const gymHandleRef = useRef<GymWorldHandle | null>(null);
+
+  useEffect(() => {
+    inGymRef.current = inGym;
+  }, [inGym]);
+
+  // Swap active world (school floor vs gymnasium)
   useEffect(() => {
     if (!sceneHandle) return;
     const { scene, castShadow, maxAnisotropy } = sceneHandle;
 
-    if (worldRef.current && worldRef.current.floor === currentFloor) {
-      return;
-    }
-
     if (worldRef.current) {
       scene.remove(worldRef.current.group);
       worldRef.current.dispose();
+      worldRef.current = null;
+      gymHandleRef.current = null;
     }
 
-    const nextWorld = buildSchoolWorld(currentFloor, maxAnisotropy, castShadow);
-    scene.add(nextWorld.group);
-    worldRef.current = nextWorld;
-  }, [sceneHandle, currentFloor]);
+    if (inGym) {
+      const gym = buildGymWorld(maxAnisotropy, castShadow);
+      scene.add(gym.group);
+      worldRef.current = gym;
+      gymHandleRef.current = gym;
+
+      const pos = playerPosRef.current;
+      pos.set(0, 0, 8.0);
+      facingYawRef.current = Math.PI;
+      if (avatarRef.current) {
+        avatarRef.current.root.position.copy(pos);
+        avatarRef.current.root.rotation.y = facingYawRef.current;
+      }
+    } else {
+      const nextWorld = buildSchoolWorld(currentFloor, maxAnisotropy, castShadow);
+      scene.add(nextWorld.group);
+      worldRef.current = nextWorld;
+
+      const pos = playerPosRef.current;
+      pos.set(-12.0, 0, 5.4);
+      facingYawRef.current = -Math.PI / 2;
+      if (avatarRef.current) {
+        avatarRef.current.root.position.copy(pos);
+        avatarRef.current.root.rotation.y = facingYawRef.current;
+      }
+    }
+  }, [sceneHandle, inGym, currentFloor]);
 
   // Teleport player right in front of the Lift facing into the corridor when switching floors
   useEffect(() => {
@@ -676,6 +707,15 @@ export const SchoolCanvas3D: React.FC<SchoolCanvas3DProps> = ({
         avatar.updateAnimation(dt, moving ? 1 : 0, !isGrounded, pos.y);
 
         // Check interactive zones on CURRENT FLOOR ONLY
+        if (inGymRef.current && gymHandleRef.current) {
+          const ez = gymHandleRef.current.exitZone;
+          const dist = Math.hypot(pos.x - ez.x, pos.z - ez.z);
+          if (dist <= ez.radius && zoneCooldownRef.current <= 0) {
+            zoneCooldownRef.current = 1.4;
+            onEnterZoneRef.current('exit_gym');
+          }
+        }
+
         const floorZones = getZonesForFloor(currentFloorRef.current);
         let foundComingSoon: WorldZone | null = null;
 

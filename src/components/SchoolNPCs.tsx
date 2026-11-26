@@ -72,6 +72,7 @@ const FLOOR_DOOR_WAYPOINTS: Record<FloorNumber, DoorWaypoint[]> = {
   ],
   2: [
     { x: -11.4, z: -2.2, subjectId: 'english', doorYaw: -Math.PI / 2, insideX: -14.1, insideZ: -2.2 },
+    { x: -11.4, z: 5.4, subjectId: 'pe', doorYaw: -Math.PI / 2, insideX: -14.1, insideZ: 5.4 },
   ],
   3: [
     { x: -11.4, z: -5.4, subjectId: 'cs', doorYaw: -Math.PI / 2, insideX: -14.1, insideZ: -5.4 },
@@ -83,6 +84,7 @@ const DOOR_BY_SUBJECT: Record<SubjectId, DoorWaypoint> = {
   alifbe: FLOOR_DOOR_WAYPOINTS[1][0],
   math: FLOOR_DOOR_WAYPOINTS[1][1],
   english: FLOOR_DOOR_WAYPOINTS[2][0],
+  pe: FLOOR_DOOR_WAYPOINTS[2][1],
   cs: FLOOR_DOOR_WAYPOINTS[3][0],
   science: FLOOR_DOOR_WAYPOINTS[3][1],
 };
@@ -111,6 +113,7 @@ const TEACHER_ROOM_SPOTS: Record<SubjectId, { x: number; z: number; greetYaw: nu
   alifbe: { x: -10.3, z: 0.3, greetYaw: Math.PI / 2 - 0.25 },
   math: { x: 10.3, z: 0.3, greetYaw: -Math.PI / 2 + 0.25 },
   english: { x: -10.3, z: 0.3, greetYaw: Math.PI / 2 - 0.25 },
+  pe: { x: -10.3, z: 7.9, greetYaw: Math.PI / 2 - 0.25 },
   cs: { x: -10.3, z: -2.9, greetYaw: Math.PI / 2 - 0.25 },
   science: { x: 10.3, z: -2.9, greetYaw: -Math.PI / 2 + 0.25 },
 };
@@ -489,11 +492,11 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       { name: 'Aziz', gender: 'boy', speed: 3.05, equipped: { bag: 'basic_backpack', outfit: 'white_shirt_tie' }, initHallIdx: 0 },
       { name: 'Jasur', gender: 'boy', speed: 3.15, equipped: { hat: 'chust_doppi', watch: 'school_watch' }, initHallIdx: 2 },
       { name: 'Sardor', gender: 'boy', speed: 2.95, equipped: { outfit: 'school_vest', bag: 'classic_satchel' }, initHallIdx: 1 },
-      { name: 'Bekzod', gender: 'boy', speed: 3.0, equipped: { hat: 'chust_doppi', bag: 'basic_backpack' }, initHallIdx: 6 },
+      { name: 'Bekzod', gender: 'boy', speed: 3.0, equipped: { outfit: 'sport_uniform', bag: 'basic_backpack' }, initHallIdx: 6 },
       { name: 'Madina', gender: 'girl', speed: 2.9, equipped: { bag: 'basic_backpack', hat: 'iroqi_doppi' }, initHallIdx: 4 },
-      { name: 'Malika', gender: 'girl', speed: 2.95, equipped: { bag: 'gold_backpack', medal: 'honor_medal' }, initHallIdx: 3 },
-      { name: 'Zilola', gender: 'girl', speed: 2.85, equipped: { bag: 'classic_satchel', watch: 'school_watch' }, initHallIdx: 5 },
-      { name: 'Dilshoda', gender: 'girl', speed: 2.9, equipped: { hat: 'iroqi_doppi', bag: 'basic_backpack' }, initHallIdx: 7 },
+      { name: 'Malika', gender: 'girl', speed: 2.95, equipped: { outfit: 'ceremonial_uniform', bag: 'gold_backpack', medal: 'honor_medal' }, initHallIdx: 3 },
+      { name: 'Zilola', gender: 'girl', speed: 2.85, equipped: { outfit: 'girl_vest_skirt', bag: 'classic_satchel', watch: 'school_watch' }, initHallIdx: 5 },
+      { name: 'Dilshoda', gender: 'girl', speed: 2.9, equipped: { outfit: 'girl_blouse_skirt', hat: 'iroqi_doppi', bag: 'basic_backpack' }, initHallIdx: 7 },
     ];
 
     const students: DynamicStudentNpc[] = studentDefs.map((def, idx) => {

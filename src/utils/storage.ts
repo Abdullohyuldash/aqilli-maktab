@@ -11,7 +11,7 @@ import {
 import { VALID_AWARD_IDS } from '../data/awards';
 
 export const SUBJECT_ORDER: SubjectId[] = ['math', 'english', 'cs', 'science'];
-export const ALL_SUBJECTS: SubjectId[] = ['alifbe', 'math', 'english', 'cs', 'science'];
+export const ALL_SUBJECTS: SubjectId[] = ['alifbe', 'math', 'english', 'cs', 'science', 'pe'];
 
 export function getSubjectOrderForGrade(grade: number): SubjectId[] {
   return grade === 1 ? ALL_SUBJECTS : SUBJECT_ORDER;
@@ -89,6 +89,26 @@ export const SHOP_ITEMS: ShopItem[] = [
     price: 200,
     slot: 'outfit',
     accentColor: '#0F172A',
+  },
+  {
+    id: 'sport_uniform',
+    category: 'outfit',
+    genderRestriction: 'both',
+    name: 'Sport Maktab Formasi',
+    description: "Jismoniy tarbiya va faol mashg'ulotlar uchun ko'k sportivka, oq chiziqli shim va krossovka.",
+    price: 90,
+    slot: 'outfit',
+    accentColor: '#0284C7',
+  },
+  {
+    id: 'ceremonial_uniform',
+    category: 'outfit',
+    genderRestriction: 'both',
+    name: 'Tantanali Maktab Formasi',
+    description: "Oltin yelka bezakli oq parad libosi va uch rangli faxriy lenta — tantanali marosimlar uchun.",
+    price: 240,
+    slot: 'outfit',
+    accentColor: '#B45309',
   },
 
   // =========================================================================
@@ -213,6 +233,8 @@ const VALID_OUTFITS = new Set<string>([
   'girl_blouse_skirt',
   'girl_vest_skirt',
   'girl_apron_uniform',
+  'sport_uniform',
+  'ceremonial_uniform',
 ]);
 const VALID_HATS = new Set<string>(['chust_doppi', 'girl_white_bows', 'iroqi_doppi', 'scholar_cap']);
 const VALID_BAGS = new Set<string>(['basic_backpack', 'classic_satchel', 'gold_backpack']);
@@ -293,6 +315,7 @@ export const DEFAULT_STATS: PlayerStats = {
   greetingsGiven: 0,
   mathCompleted: 0,
   languageCompleted: 0,
+  sportCompleted: 0,
 };
 
 export const DEFAULT_PROFILE: PlayerProfile = {
@@ -310,6 +333,7 @@ export const DEFAULT_PROFILE: PlayerProfile = {
     english: 0,
     cs: 0,
     science: 0,
+    pe: 0,
   },
   activeSubjectIndex: 0,
   stats: { ...DEFAULT_STATS },
@@ -343,17 +367,18 @@ export function loadProfile(): PlayerProfile | null {
       greetingsGiven: sanitizeNonNegInt(rawStats?.greetingsGiven),
       mathCompleted: sanitizeNonNegInt(rawStats?.mathCompleted),
       languageCompleted: sanitizeNonNegInt(rawStats?.languageCompleted),
+      sportCompleted: sanitizeNonNegInt(rawStats?.sportCompleted),
     };
 
-    const cleanUnlockedAwards: string[] = Array.isArray(parsed.unlockedAwards)
-      ? Array.from(
-          new Set(
-            parsed.unlockedAwards.filter(
+    const cleanUnlockedAwards: string[] = Array.from(
+      new Set(
+        Array.isArray(parsed.unlockedAwards)
+          ? parsed.unlockedAwards.filter(
               (id): id is string => typeof id === 'string' && VALID_AWARD_IDS.has(id)
             )
-          )
-        )
-      : [];
+          : []
+      )
+    );
 
     return {
       name: typeof parsed.name === 'string' ? parsed.name : '',
@@ -377,6 +402,7 @@ export function loadProfile(): PlayerProfile | null {
         english: parsed.subjectCompletions?.english ?? 0,
         cs: parsed.subjectCompletions?.cs ?? 0,
         science: parsed.subjectCompletions?.science ?? 0,
+        pe: parsed.subjectCompletions?.pe ?? 0,
       },
       activeSubjectIndex:
         typeof parsed.activeSubjectIndex === 'number'

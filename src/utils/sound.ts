@@ -431,7 +431,7 @@ class SoundEngine {
     });
   }
 
-  public playEmote(emote: 'salom' | 'qarsak' | 'quvonch' | 'milliy_raqs'): void {
+  public playEmote(emote: string): void {
     if (emote === 'quvonch') {
       this.playLessonComplete();
       return;

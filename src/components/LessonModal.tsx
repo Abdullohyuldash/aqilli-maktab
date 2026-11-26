@@ -30,6 +30,8 @@ import {
   LessonPlan,
   MathGameType,
   MathRound,
+  PeGameType,
+  PeRound,
   ScienceGameType,
   ScienceRound,
   SUBJECT_META,
@@ -112,6 +114,20 @@ import {
   TrainBuilderStage,
   TwinLettersStage,
 } from './AlifbeGrade1MiniGames';
+import {
+  BallThrowStage,
+  CheckersIntroStage,
+  DayNightFreezeStage,
+  GymnasticsBalanceStage,
+  JumpPowerStage,
+  LineFormationStage,
+  NumberReactionStage,
+  PE_GAME_TITLES,
+  RelayRaceStage,
+  TagChaseStage,
+  TrainRouteStage,
+  WarmupRhythmStage,
+} from './PeGrade1MiniGames';
 
 interface LessonModalProps {
   lesson: LessonPlan;
@@ -2916,6 +2932,149 @@ const ScienceMiniGame: React.FC<{
 };
 
 // =========================================================================
+// 4B. PE (JISMONIY TARBIYA) MINI-GAME: 11 Interactive Sport & Gym Stages
+// =========================================================================
+const PeMiniGame: React.FC<{
+  rounds: PeRound[];
+  peGameType?: PeGameType;
+  onFinish: (correctCount: number) => void;
+}> = ({ rounds, peGameType, onFinish }) => {
+  const [roundIdx, setRoundIdx] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [interactiveSolved, setInteractiveSolved] = useState(false);
+  const [teacherHint, setTeacherHint] = useState<string | null>(null);
+  const [stepPraise, setStepPraise] = useState<string | null>(null);
+  const [confettiKey, setConfettiKey] = useState(0);
+
+  const current = rounds[roundIdx];
+  const resolvedKind: PeGameType =
+    current.kind !== 'quiz' ? current.kind : peGameType ?? 'line_formation';
+
+  useEffect(() => {
+    setInteractiveSolved(false);
+    setTeacherHint(null);
+    setStepPraise(null);
+  }, [roundIdx]);
+
+  const handleInteractiveSolve = () => {
+    if (interactiveSolved) return;
+    const nextCorrect = correctCount + 1;
+    setInteractiveSolved(true);
+    setTeacherHint(null);
+    setStepPraise(null);
+    setCorrectCount(nextCorrect);
+    setConfettiKey((k) => k + 1);
+    soundEngine.playCorrect();
+
+    window.setTimeout(() => {
+      if (roundIdx + 1 < rounds.length) {
+        setRoundIdx((i) => i + 1);
+      } else {
+        onFinish(nextCorrect);
+      }
+    }, 1900);
+  };
+
+  const handleStepSuccess = (message?: string) => {
+    setTeacherHint(null);
+    setConfettiKey((k) => k + 1);
+    if (message) {
+      setStepPraise(message);
+    }
+  };
+
+  const handleStepMistake = (hint: string) => {
+    setStepPraise(null);
+    setTeacherHint(hint);
+  };
+
+  const stageProps = {
+    round: current,
+    solved: interactiveSolved,
+    onSolve: handleInteractiveSolve,
+    onStepSuccess: handleStepSuccess,
+    onStepMistake: handleStepMistake,
+  };
+
+  return (
+    <div className="relative space-y-4">
+      <StepConfettiBurst burstKey={confettiKey} />
+
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-600">
+        <span>
+          Raund {roundIdx + 1} / {rounds.length} ·{' '}
+          {PE_GAME_TITLES[resolvedKind] ?? 'Sport zali mashqi'}
+        </span>
+        <span className="font-mono-num text-emerald-700 font-bold">
+          +{correctCount * POINTS_PER_CORRECT} ball
+        </span>
+      </div>
+
+      <div className="rounded-2xl bg-sky-50/90 border border-sky-200 px-4 py-3 text-center">
+        <p className="text-base sm:text-lg font-display font-extrabold text-slate-900 text-balance leading-snug">
+          {current.prompt}
+        </p>
+      </div>
+
+      <div key={`${resolvedKind}-${roundIdx}`}>
+        {resolvedKind === 'line_formation' && <LineFormationStage {...stageProps} />}
+        {resolvedKind === 'number_reaction' && <NumberReactionStage {...stageProps} />}
+        {resolvedKind === 'train_route' && <TrainRouteStage {...stageProps} />}
+        {resolvedKind === 'warmup_rhythm' && <WarmupRhythmStage {...stageProps} />}
+        {resolvedKind === 'day_night_freeze' && <DayNightFreezeStage {...stageProps} />}
+        {resolvedKind === 'tag_chase' && <TagChaseStage {...stageProps} />}
+        {resolvedKind === 'relay_race' && <RelayRaceStage {...stageProps} />}
+        {resolvedKind === 'gymnastics_balance' && <GymnasticsBalanceStage {...stageProps} />}
+        {resolvedKind === 'jump_power' && <JumpPowerStage {...stageProps} />}
+        {resolvedKind === 'ball_throw' && <BallThrowStage {...stageProps} />}
+        {resolvedKind === 'checkers_intro' && <CheckersIntroStage {...stageProps} />}
+      </div>
+
+      <div
+        className={`min-h-[78px] rounded-2xl px-4 py-3 text-sm flex items-center gap-2.5 transition-colors ${
+          interactiveSolved
+            ? 'bg-emerald-50 text-emerald-950 border-2 border-emerald-300'
+            : teacherHint
+            ? 'bg-amber-50 text-amber-950 border-2 border-amber-300'
+            : stepPraise
+            ? 'bg-sky-50 text-sky-950 border border-sky-200'
+            : 'bg-slate-50 text-slate-600 border border-slate-200/80'
+        }`}
+      >
+        {interactiveSolved ? (
+          <>
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+            <div className="leading-snug">
+              <div className="font-display font-extrabold text-emerald-900">
+                Barakalla! Ajoyib sport natijasi! (+{POINTS_PER_CORRECT} ball)
+              </div>
+              <div className="text-xs font-medium mt-0.5 text-emerald-800">{current.fact}</div>
+            </div>
+          </>
+        ) : teacherHint ? (
+          <>
+            <span className="text-2xl leading-none shrink-0" aria-hidden="true">👨‍🏫</span>
+            <div className="leading-snug">
+              <div className="text-xs font-extrabold text-amber-800">Ustoz Rustam maslahati:</div>
+              <div className="text-xs sm:text-sm font-semibold text-amber-950 mt-0.5">{teacherHint}</div>
+            </div>
+          </>
+        ) : stepPraise ? (
+          <>
+            <CheckCircle2 className="w-5 h-5 text-sky-600 shrink-0" />
+            <span className="font-bold text-xs sm:text-sm">{stepPraise}</span>
+          </>
+        ) : (
+          <span className="text-xs sm:text-sm font-medium">
+            Mashqni bajaring — har bir harakat sog‘liq va kuch bag‘ishlaydi!
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// =========================================================================
 // 5. ALIFBE MINI-GAME (1-sinf Voice + Visual Pre-Reader UX)
 //    Vowels (A, O, I, U, E, O') = RED | Consonants = BLUE
 // =========================================================================
@@ -3653,6 +3812,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({
     lesson.englishRounds?.length ??
     lesson.csRounds?.length ??
     lesson.scienceRounds?.length ??
+    lesson.peRounds?.length ??
     4;
   const isPerfectScore = correctCount >= totalRounds;
   const earnedFromAnswers = correctCount * POINTS_PER_CORRECT;
@@ -3924,6 +4084,13 @@ export const LessonModal: React.FC<LessonModalProps> = ({
                   <ScienceMiniGame
                     rounds={lesson.scienceRounds}
                     scienceGameType={lesson.scienceGameType}
+                    onFinish={handleGameFinish}
+                  />
+                )}
+                {lesson.subject === 'pe' && lesson.peRounds && (
+                  <PeMiniGame
+                    rounds={lesson.peRounds}
+                    peGameType={lesson.peGameType}
                     onFinish={handleGameFinish}
                   />
                 )}

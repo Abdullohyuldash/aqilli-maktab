@@ -62,6 +62,18 @@ export const AWARD_CATEGORIES: AwardCategoryMeta[] = [
     borderColor: '#DDD6FE',
     progressColor: '#8B5CF6',
   },
+  {
+    id: 'sport',
+    title: 'Sport va Chaqqonlik',
+    subtitle: "Jismoniy tarbiya va sport zali a'lo darslari",
+    emoji: '🏅',
+    statKey: 'sportCompleted',
+    unitLabel: "ta a'lo dars",
+    accentColor: '#0284C7',
+    softBg: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    progressColor: '#0EA5E9',
+  },
 ];
 
 export const AWARD_TIER_META: Record<
@@ -185,6 +197,35 @@ export const ALL_AWARDS: AwardDefinition[] = [
     category: 'language',
     tier: 'gold',
     title: 'Yosh Notiq',
+    targetCount: 30,
+    rewardCoins: 100,
+    unitLabel: "ta a'lo dars",
+  },
+
+  // E) Sport va Chaqqonlik
+  {
+    id: 'sport_bronze',
+    category: 'sport',
+    tier: 'bronze',
+    title: 'Chaqqon bola',
+    targetCount: 5,
+    rewardCoins: 20,
+    unitLabel: "ta a'lo dars",
+  },
+  {
+    id: 'sport_silver',
+    category: 'sport',
+    tier: 'silver',
+    title: 'Yosh sportchi',
+    targetCount: 15,
+    rewardCoins: 50,
+    unitLabel: "ta a'lo dars",
+  },
+  {
+    id: 'sport_gold',
+    category: 'sport',
+    tier: 'gold',
+    title: 'Maktab chempioni',
     targetCount: 30,
     rewardCoins: 100,
     unitLabel: "ta a'lo dars",

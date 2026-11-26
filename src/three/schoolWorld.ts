@@ -96,6 +96,12 @@ const CLASSROOM_VISUALS: Record<string, ClassroomVisualMeta> = {
     boardLabel: 'TABIIY FANLAR',
     boardOffsetX: 3.3,
   },
+  pe: {
+    subtitle: '1–11-SINF • HARAKAT, GIMNASTIKA VA O‘YINLAR',
+    formula: 'SPORT • KUCH • CHAQQONLIK',
+    boardLabel: 'SPORT ZALI',
+    boardOffsetX: -3.1,
+  },
   ona_tili: {
     subtitle: 'TEZ KUNDA OCHILADI',
     formula: 'Ona tili va adabiyot',
@@ -1037,7 +1043,7 @@ export function buildSchoolWorld(
           { side: 1, centerZ: 6.2 },
         ]
       : floor === 2
-      ? [{ side: -1, centerZ: 6.2 }]
+      ? [{ side: -1, centerZ: -7.2 }]
       : [{ side: 1, centerZ: 5.4 }];
 
   lockerBays.forEach(({ side, centerZ }) => {

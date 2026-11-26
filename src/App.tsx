@@ -37,11 +37,13 @@ import { CurriculumInspectorModal } from './components/CurriculumInspectorModal'
 import { ScheduleModal } from './components/ScheduleModal';
 import { LiftModal } from './components/LiftModal';
 import { AwardCelebrationPopup, AwardsModal } from './components/AwardsModal';
+import { GymHudOverlay } from './components/GymHudOverlay';
 
 export default function App() {
   const [savedExists] = useState<boolean>(() => Boolean(loadProfile()?.name));
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile() || DEFAULT_PROFILE);
   const [screen, setScreen] = useState<'start' | 'school'>('start');
+  const [activePeLessonIndex, setActivePeLessonIndex] = useState<number>(0);
 
   // 3-Floor Architecture state (default Floor 1)
   const [currentFloor, setCurrentFloor] = useState<FloorNumber>(1);
@@ -64,6 +66,8 @@ export default function App() {
   const [startInspectorOpen, setStartInspectorOpen] = useState(false);
 
   const [muted, setMuted] = useState(false);
+  const [inGym, setInGym] = useState(false);
+  const [gymTransition, setGymTransition] = useState<string | null>(null);
   const [nudgeToken, setNudgeToken] = useState(0);
   const [emoteRequest, setEmoteRequest] = useState<EmoteRequest | null>(null);
   const [activeEmote, setActiveEmote] = useState<AvatarEmote | null>(null);
@@ -161,6 +165,20 @@ export default function App() {
     } else if (zone === 'schedule') {
       soundEngine.playEquip();
       setActiveModal({ type: 'schedule' });
+    } else if (zone === 'pe') {
+      soundEngine.playEquip();
+      setGymTransition("🏃 Sport zaliga kirilmoqda...");
+      window.setTimeout(() => {
+        setInGym(true);
+        setGymTransition(null);
+      }, 500);
+    } else if (zone === 'exit_gym') {
+      soundEngine.playEquip();
+      setGymTransition("Maktab koridoriga chiqilmoqda...");
+      window.setTimeout(() => {
+        setInGym(false);
+        setGymTransition(null);
+      }, 500);
     } else if (zone in SUBJECT_META) {
       soundEngine.playEquip();
       setActiveModal({ type: 'lesson', subject: zone as SubjectId });
@@ -336,6 +354,37 @@ export default function App() {
     [handleTriggerEmote, showEthicsToast]
   );
 
+  const handleCompleteLesson = useCallback(
+    (subject: SubjectId, earnedCoins: number) => {
+      setProfile((prev) => {
+        const nextSubjectCompletions = {
+          ...prev.subjectCompletions,
+          [subject]: (prev.subjectCompletions[subject] || 0) + 1,
+        };
+        const nextStats = {
+          ...prev.stats,
+          sportCompleted: subject === 'pe' ? prev.stats.sportCompleted + 1 : prev.stats.sportCompleted,
+        };
+        const newlyEarned = evaluateNewlyUnlockedAwards(nextStats, prev.unlockedAwards);
+        const bonusCoins = newlyEarned.reduce((sum, a) => sum + a.rewardCoins, 0);
+        const updated: PlayerProfile = {
+          ...prev,
+          coins: prev.coins + earnedCoins + bonusCoins,
+          completedLessons: prev.completedLessons + 1,
+          subjectCompletions: nextSubjectCompletions,
+          stats: nextStats,
+          unlockedAwards:
+            newlyEarned.length > 0
+              ? [...prev.unlockedAwards, ...newlyEarned.map((a) => a.id)]
+              : prev.unlockedAwards,
+        };
+        saveProfile(updated);
+        return updated;
+      });
+    },
+    []
+  );
+
   const handleTrashOutcome = useCallback(
     (outcome: TrashOutcome) => {
       if (outcome.kind === 'deposited') {
@@ -396,12 +445,14 @@ export default function App() {
     const countsForMath = isGreat && (finishedSubject === 'math' || finishedSubject === 'cs');
     const countsForLanguage =
       isGreat && (finishedSubject === 'alifbe' || finishedSubject === 'english');
+    const countsForSport = isGreat && finishedSubject === 'pe';
 
     setProfile((prev) => {
       const nextStats = {
         ...prev.stats,
         mathCompleted: prev.stats.mathCompleted + (countsForMath ? 1 : 0),
         languageCompleted: prev.stats.languageCompleted + (countsForLanguage ? 1 : 0),
+        sportCompleted: prev.stats.sportCompleted + (countsForSport ? 1 : 0),
       };
       const newlyEarned = evaluateNewlyUnlockedAwards(nextStats, prev.unlockedAwards);
       const bonusCoins = newlyEarned.reduce((sum, a) => sum + a.rewardCoins, 0);
@@ -546,6 +597,7 @@ export default function App() {
         shirtColor={profile.shirtColor}
         equipped={profile.equipped}
         activeSubject={activeSubject}
+        inGym={inGym}
         isPaused={isPaused}
         nudgeToken={nudgeToken}
         elevatorTeleportToken={elevatorTeleportToken}
@@ -569,66 +621,92 @@ export default function App() {
         }}
       />
 
-      {/* Always-visible lightweight Game HUD */}
-      <HudOverlay
-        profile={profile}
-        currentFloor={currentFloor}
-        activeSubject={activeSubject}
-        muted={muted}
-        isPaused={isPaused}
-        activeEmote={activeEmote}
-        nearbyInactiveZone={isPaused ? null : nearbyInactiveZone}
-        nearbyComingSoon={isPaused ? null : nearbyComingSoon}
-        teacherGreetingPrompt={isPaused ? null : teacherGreetingPrompt}
-        trashPrompt={isPaused ? null : trashPrompt}
-        ethicsFeedback={ethicsFeedback}
-        virtualControlsRef={virtualControlsRef}
-        onToggleMute={handleToggleMute}
-        onOpenSchedule={() => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'schedule' });
-        }}
-        onOpenAwards={() => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'awards' });
-        }}
-        onOpenShop={() => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'shop' });
-        }}
-        onOpenInspector={() => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'inspector' });
-        }}
-        onOpenSettings={() => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'settings' });
-        }}
-        onEnterSpecificSubject={(subject) => {
-          soundEngine.playEquip();
-          setActiveModal({ type: 'lesson', subject });
-        }}
-        onTriggerEmote={(emote, durationSec) => {
-          if (emote === 'salom' && teacherGreetingPrompt && !isPaused) {
-            handleGreetTeacher();
-          } else {
-            handleTriggerEmote(emote, durationSec, false);
-          }
-        }}
-        onGreetTeacher={handleGreetTeacher}
-        onPickupTrash={handlePickupTrash}
-      />
+      {/* Always-visible lightweight Game HUD or Gym HUD */}
+      {inGym ? (
+        <GymHudOverlay
+          profile={profile}
+          activePeLessonIndex={activePeLessonIndex}
+          onSelectLesson={setActivePeLessonIndex}
+          onExitGym={() => handleEnterZone('exit_gym')}
+          onCompleteLesson={handleCompleteLesson}
+          onTriggerEmote={(emote, dur, fanfare) => handleTriggerEmote(emote, dur, fanfare)}
+        />
+      ) : (
+        <HudOverlay
+          profile={profile}
+          currentFloor={currentFloor}
+          activeSubject={activeSubject}
+          muted={muted}
+          isPaused={isPaused}
+          activeEmote={activeEmote}
+          nearbyInactiveZone={isPaused ? null : nearbyInactiveZone}
+          nearbyComingSoon={isPaused ? null : nearbyComingSoon}
+          teacherGreetingPrompt={isPaused ? null : teacherGreetingPrompt}
+          trashPrompt={isPaused ? null : trashPrompt}
+          ethicsFeedback={ethicsFeedback}
+          virtualControlsRef={virtualControlsRef}
+          onToggleMute={handleToggleMute}
+          onOpenSchedule={() => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'schedule' });
+          }}
+          onOpenAwards={() => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'awards' });
+          }}
+          onOpenShop={() => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'shop' });
+          }}
+          onOpenInspector={() => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'inspector' });
+          }}
+          onOpenSettings={() => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'settings' });
+          }}
+          onEnterSpecificSubject={(subject) => {
+            soundEngine.playEquip();
+            setActiveModal({ type: 'lesson', subject });
+          }}
+          onTriggerEmote={(emote, durationSec) => {
+            if (emote === 'salom' && teacherGreetingPrompt && !isPaused) {
+              handleGreetTeacher();
+            } else {
+              handleTriggerEmote(emote, durationSec, false);
+            }
+          }}
+          onGreetTeacher={handleGreetTeacher}
+          onPickupTrash={handlePickupTrash}
+        />
+      )}
 
-      {/* 0.5-Second Elevator Floor Transition Overlay */}
-      {elevatorTransition && (
+      {/* Gym Exit Button when inside Sport zali */}
+      {inGym && !gymTransition && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => handleEnterZone('exit_gym')}
+            className="px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-display font-bold text-sm shadow-xl flex items-center gap-2 cursor-pointer border-2 border-white"
+          >
+            <span>🚪 Zaldan chiqish</span>
+          </button>
+        </div>
+      )}
+
+      {/* 0.5-Second Elevator Floor / Gym Transition Overlay */}
+      {(elevatorTransition || gymTransition) && (
         <div className="fixed inset-0 z-[60] bg-slate-900/90 flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl px-8 py-6 shadow-2xl border-2 border-sky-400 text-center max-w-md w-full">
             <div className="font-display font-extrabold text-xl sm:text-2xl text-slate-900">
-              🛗 {elevatorTransition.targetFloor}-qavatga o&apos;tilmoqda...
+              {gymTransition ? gymTransition : `🛗 ${elevatorTransition?.targetFloor}-qavatga o'tilmoqda...`}
             </div>
-            <div className="text-sm font-medium text-slate-500 mt-1.5">
-              {FLOOR_META[elevatorTransition.targetFloor].roomsSummary}
-            </div>
+            {elevatorTransition && (
+              <div className="text-sm font-medium text-slate-500 mt-1.5">
+                {FLOOR_META[elevatorTransition.targetFloor].roomsSummary}
+              </div>
+            )}
           </div>
         </div>
       )}

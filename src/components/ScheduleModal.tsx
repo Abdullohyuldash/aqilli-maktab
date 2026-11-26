@@ -16,6 +16,7 @@ const SUBJECT_EMOJI: Record<SubjectId, string> = {
   english: '🌍',
   cs: '💻',
   science: '🌿',
+  pe: '🏃',
 };
 
 const ROOM_COLOR_LABEL: Record<SubjectId, string> = {
@@ -24,6 +25,7 @@ const ROOM_COLOR_LABEL: Record<SubjectId, string> = {
   english: 'Yashil xona',
   cs: 'Binafsha xona',
   science: "To'q sariq xona",
+  pe: 'Moviy zal',
 };
 
 export const ScheduleModal: React.FC<ScheduleModalProps> = ({ profile, onClose }) => {
@@ -60,7 +62,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ profile, onClose }
         </div>
 
         {/* Schedule Rows (Zero Scroll — AutoFitModal handles all viewports cleanly) */}
-        <div className="p-5 sm:p-6 bg-slate-50/70 space-y-2.5">
+        <div className="p-4 sm:p-5 bg-slate-50/70 space-y-2">
           {subjectOrder.map((subjectId, idx) => {
             const meta = SUBJECT_META[subjectId];
             const completions = profile.subjectCompletions[subjectId] || 0;
@@ -77,7 +79,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ profile, onClose }
             return (
               <div
                 key={subjectId}
-                className={`rounded-2xl border-2 px-4 py-3.5 transition-colors flex items-center gap-3.5 ${
+                className={`rounded-2xl border-2 px-4 py-2.5 transition-colors flex items-center gap-3.5 ${
                   isCurrent
                     ? 'bg-amber-50/90 border-amber-400 shadow-md'
                     : isCompleted

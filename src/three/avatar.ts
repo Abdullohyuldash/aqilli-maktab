@@ -19,6 +19,8 @@ export interface RobloxAvatarRig {
     girlBlouseSkirt: THREE.Group;
     girlVestSkirt: THREE.Group;
     girlApronUniform: THREE.Group;
+    sportUniform: THREE.Group;
+    ceremonialUniform: THREE.Group;
     chustDoppi: THREE.Group;
     girlWhiteBows: THREE.Group;
     iroqiDoppi: THREE.Group;
@@ -112,8 +114,22 @@ export function createRobloxAvatar(
   const skirtMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: new THREE.Color(initialShirtColor).lerp(new THREE.Color('#0F172A'), 0.14),
-      roughness: 0.52,
+      roughness: 0.56,
       metalness: 0.04,
+    })
+  );
+  const skirtPleatMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(initialShirtColor).lerp(new THREE.Color('#0F172A'), 0.3),
+      roughness: 0.62,
+      metalness: 0.04,
+    })
+  );
+  const skirtHemMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: new THREE.Color(initialShirtColor).lerp(new THREE.Color('#0F172A'), 0.24),
+      roughness: 0.52,
+      metalness: 0.06,
     })
   );
   const waistTrimMat = trackMat(
@@ -172,14 +188,76 @@ export function createRobloxAvatar(
     return mesh;
   };
 
+  const createRectFrustumGeo = (
+    topW: number,
+    topD: number,
+    botW: number,
+    botD: number,
+    height: number
+  ): THREE.BufferGeometry => {
+    const h = height / 2;
+    const tx = topW / 2;
+    const tz = topD / 2;
+    const bx = botW / 2;
+    const bz = botD / 2;
+
+    const p: number[] = [];
+    const tri = (
+      ax: number,
+      ay: number,
+      az: number,
+      bxx: number,
+      byy: number,
+      bzz: number,
+      cx: number,
+      cy: number,
+      cz: number
+    ) => {
+      p.push(ax, ay, az, bxx, byy, bzz, cx, cy, cz);
+    };
+
+    // Front (+Z)
+    tri(-tx, h, tz, -bx, -h, bz, bx, -h, bz);
+    tri(-tx, h, tz, bx, -h, bz, tx, h, tz);
+    // Back (-Z)
+    tri(tx, h, -tz, bx, -h, -bz, -bx, -h, -bz);
+    tri(tx, h, -tz, -bx, -h, -bz, -tx, h, -tz);
+    // Left (-X)
+    tri(-tx, h, -tz, -bx, -h, -bz, -bx, -h, bz);
+    tri(-tx, h, -tz, -bx, -h, bz, -tx, h, tz);
+    // Right (+X)
+    tri(tx, h, tz, bx, -h, bz, bx, -h, -bz);
+    tri(tx, h, tz, bx, -h, -bz, tx, h, -tz);
+    // Top (+Y)
+    tri(-tx, h, -tz, -tx, h, tz, tx, h, tz);
+    tri(-tx, h, -tz, tx, h, tz, tx, h, -tz);
+    // Bottom (-Y)
+    tri(-bx, -h, bz, -bx, -h, -bz, bx, -h, -bz);
+    tri(-bx, -h, bz, bx, -h, -bz, bx, -h, bz);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    geo.computeVertexNormals();
+    return trackGeo(geo);
+  };
+
   // --- LEGS (Bottom-center grounded at y = 0) ---
-  const makeLeg = (xOffset: number): THREE.Group => {
+  const makeLeg = (xOffset: number): { pivot: THREE.Group; sportStripe: THREE.Mesh } => {
     const pivot = new THREE.Group();
     pivot.position.set(xOffset, 0.92, 0);
 
     const upperLeg = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.38, 0.74, 0.42)), pantsMat));
     upperLeg.position.y = -0.37;
     pivot.add(upperLeg);
+
+    // Sport tracksuit crisp white side stripe
+    const sportStripe = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(0.03, 0.72, 0.085)),
+      crispWhiteMat
+    );
+    sportStripe.position.set(xOffset < 0 ? -0.192 : 0.192, -0.37, 0);
+    sportStripe.visible = false;
+    pivot.add(sportStripe);
 
     const shoe = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.4, 0.14, 0.5)), shoeMat));
     shoe.position.set(0, -0.79, 0.04);
@@ -190,11 +268,13 @@ export function createRobloxAvatar(
     pivot.add(sole);
 
     bodyGroup.add(pivot);
-    return pivot;
+    return { pivot, sportStripe };
   };
 
-  const leftLegPivot = makeLeg(-0.22);
-  const rightLegPivot = makeLeg(0.22);
+  const leftLeg = makeLeg(-0.22);
+  const rightLeg = makeLeg(0.22);
+  const leftLegPivot = leftLeg.pivot;
+  const rightLegPivot = rightLeg.pivot;
 
   // --- TORSO (y from 0.92 to 1.88, center at 1.40) ---
   const torso = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.86, 0.96, 0.48)), shirtMat));
@@ -219,19 +299,62 @@ export function createRobloxAvatar(
   bodyGroup.add(boyLowerGroup);
 
   const girlLowerGroup = new THREE.Group();
-  {
-    const waistRibbon = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.9, 0.11, 0.52)), waistTrimMat));
-    waistRibbon.position.set(0, 0.98, 0);
-    girlLowerGroup.add(waistRibbon);
+  const girlWaistRibbon = enableShadows(
+    new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.91, 0.09, 0.525)), waistTrimMat)
+  );
+  girlWaistRibbon.position.set(0, 0.955, 0);
+  girlLowerGroup.add(girlWaistRibbon);
 
-    // 4-sided blocky flared trapezoid school skirt
-    const skirtGeo = trackGeo(new THREE.CylinderGeometry(0.56, 0.76, 0.5, 4));
-    const skirt = enableShadows(new THREE.Mesh(skirtGeo, skirtMat));
-    skirt.rotation.y = Math.PI / 4;
-    skirt.scale.set(1.06, 1, 0.68);
-    skirt.position.set(0, 0.73, 0);
-    girlLowerGroup.add(skirt);
+  const girlSkirtGroup = new THREE.Group();
+  {
+    // Crisp flat-faceted A-line rectangular frustum skirt (zero smooth-shading artifacts, flush waist fit!)
+    const skirtBody = enableShadows(
+      new THREE.Mesh(createRectFrustumGeo(0.9, 0.51, 1.12, 0.74, 0.4), skirtMat)
+    );
+    skirtBody.position.set(0, 0.745, 0);
+    girlSkirtGroup.add(skirtBody);
+
+    // Tailored hem border band
+    const skirtHem = new THREE.Mesh(
+      createRectFrustumGeo(1.1, 0.715, 1.132, 0.748, 0.042),
+      skirtHemMat
+    );
+    skirtHem.position.set(0, 0.558, 0);
+    girlSkirtGroup.add(skirtHem);
+
+    // Front & back box-pleat vertical ribs angled cleanly along the frustum slope
+    const fbAngle = Math.atan2(0.115, 0.4); // 0.2798 rad
+    [-0.27, 0, 0.27].forEach((px) => {
+      const frontPleat = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(0.052, 0.375, 0.024)),
+        skirtPleatMat
+      );
+      frontPleat.position.set(px, 0.745, 0.312);
+      frontPleat.rotation.x = -fbAngle;
+      girlSkirtGroup.add(frontPleat);
+
+      const backPleat = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(0.052, 0.375, 0.024)),
+        skirtPleatMat
+      );
+      backPleat.position.set(px, 0.745, -0.312);
+      backPleat.rotation.x = fbAngle;
+      girlSkirtGroup.add(backPleat);
+    });
+
+    // Left & right side pleat accents
+    const sideAngle = Math.atan2(0.11, 0.4); // 0.268 rad
+    [-1, 1].forEach((side) => {
+      const sidePleat = new THREE.Mesh(
+        trackGeo(new THREE.BoxGeometry(0.024, 0.375, 0.065)),
+        skirtPleatMat
+      );
+      sidePleat.position.set(side * 0.505, 0.745, 0);
+      sidePleat.rotation.z = side * sideAngle;
+      girlSkirtGroup.add(sidePleat);
+    });
   }
+  girlLowerGroup.add(girlSkirtGroup);
   bodyGroup.add(girlLowerGroup);
 
   // Formal Teacher white shirt V-front & crimson tie
@@ -250,7 +373,9 @@ export function createRobloxAvatar(
   }
 
   // --- ARMS (Shoulder pivot at y = 1.80) ---
-  const makeArm = (xOffset: number): { pivot: THREE.Group; cuff: THREE.Mesh } => {
+  const makeArm = (
+    xOffset: number
+  ): { pivot: THREE.Group; cuff: THREE.Mesh; sportStripe: THREE.Mesh; ceremonialCuff: THREE.Mesh } => {
     const pivot = new THREE.Group();
     pivot.position.set(xOffset, 1.8, 0);
 
@@ -260,11 +385,29 @@ export function createRobloxAvatar(
     sleeve.position.y = isTeacher ? -0.3 : -0.22;
     pivot.add(sleeve);
 
-    // Optional long-sleeve extension for formal outfits
+    // Optional long-sleeve extension for formal / sport outfits
     const cuff = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.31, 0.22, 0.35)), sleeveMat));
     cuff.position.y = -0.54;
     cuff.visible = false;
     pivot.add(cuff);
+
+    // Sport tracksuit crisp white outer sleeve stripe
+    const sportStripe = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(0.03, 0.62, 0.085)),
+      crispWhiteMat
+    );
+    sportStripe.position.set(xOffset < 0 ? -0.162 : 0.162, -0.32, 0);
+    sportStripe.visible = false;
+    pivot.add(sportStripe);
+
+    // Ceremonial gold sleeve cuff braid
+    const ceremonialCuff = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(0.325, 0.055, 0.365)),
+      goldMetalMat
+    );
+    ceremonialCuff.position.y = -0.6;
+    ceremonialCuff.visible = false;
+    pivot.add(ceremonialCuff);
 
     const forearm = enableShadows(
       new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.28, isTeacher ? 0.28 : 0.42, 0.32)), skinMat)
@@ -273,7 +416,7 @@ export function createRobloxAvatar(
     pivot.add(forearm);
 
     bodyGroup.add(pivot);
-    return { pivot, cuff };
+    return { pivot, cuff, sportStripe, ceremonialCuff };
   };
 
   const leftArm = makeArm(-0.61);
@@ -646,22 +789,152 @@ export function createRobloxAvatar(
     });
 
     // Crisp white apron waist sash + bow in back
-    const apronWaist = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.92, 0.13, 0.54)), laceWhiteMat));
-    apronWaist.position.set(0, 1.0, 0);
+    const apronWaist = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.93, 0.11, 0.54)), laceWhiteMat));
+    apronWaist.position.set(0, 0.96, 0);
     girlApronUniform.add(apronWaist);
 
-    // White apron front skirt panel cascading over the dark flared skirt
-    const apronSkirt = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.68, 0.44, 0.06)), laceWhiteMat));
-    apronSkirt.position.set(0, 0.76, 0.32);
-    apronSkirt.rotation.x = -0.18;
+    // White apron front skirt panel aligned cleanly along the pleated skirt slope (zero clipping!)
+    const apronSkirt = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.64, 0.38, 0.036)), laceWhiteMat));
+    apronSkirt.position.set(0, 0.745, 0.335);
+    apronSkirt.rotation.x = -0.28;
     girlApronUniform.add(apronSkirt);
+
+    // Delicate lace hem border at bottom of apron front panel
+    const apronHem = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.67, 0.045, 0.042)), crispWhiteMat);
+    apronHem.position.set(0, 0.57, 0.386);
+    apronHem.rotation.x = -0.28;
+    girlApronUniform.add(apronHem);
 
     // Cute white bow tied at the back of the waist
     const backBow = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.32, 0.16, 0.08)), laceWhiteMat));
-    backBow.position.set(0, 1.0, -0.29);
+    backBow.position.set(0, 0.96, -0.295);
     girlApronUniform.add(backBow);
   }
   bodyGroup.add(girlApronUniform);
+
+  // --- A3) UNIVERSAL STUDENT OUTFITS (both genders: sport_uniform & ceremonial_uniform) ---
+
+  // 6b. Sport Maktab Formasi (Sportivka + oq chiziqli shim)
+  const sportUniform = new THREE.Group();
+  {
+    const sportCobaltMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.52, metalness: 0.06 }));
+    const sportNavyMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.62, metalness: 0.04 }));
+
+    const jacketUpper = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.9, 0.56, 0.515)), sportCobaltMat));
+    jacketUpper.position.set(0, 1.58, 0);
+    sportUniform.add(jacketUpper);
+
+    const jacketLowerBand = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.905, 0.34, 0.518)), sportNavyMat));
+    jacketLowerBand.position.set(0, 1.15, 0);
+    sportUniform.add(jacketLowerBand);
+
+    // Crisp white athletic chest stripe wrap
+    const chestStripe = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.916, 0.065, 0.528)), crispWhiteMat);
+    chestStripe.position.set(0, 1.35, 0);
+    sportUniform.add(chestStripe);
+
+    // Stand-up athletic collar + white rim
+    const standCollar = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.52, 0.12, 0.53)), sportNavyMat));
+    standCollar.position.set(0, 1.855, 0.005);
+    sportUniform.add(standCollar);
+
+    const collarRim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.53, 0.032, 0.54)), crispWhiteMat);
+    collarRim.position.set(0, 1.905, 0.005);
+    sportUniform.add(collarRim);
+
+    // Front white zipper placket & silver zipper pull
+    const zipLine = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.052, 0.84, 0.03)), crispWhiteMat);
+    zipLine.position.set(0, 1.4, 0.262);
+    sportUniform.add(zipLine);
+
+    const zipPull = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.075, 0.06, 0.04)), silverMetalMat);
+    zipPull.position.set(0, 1.79, 0.27);
+    sportUniform.add(zipPull);
+
+    // Sporty shield crest on chest
+    const sportShield = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.062, 0.062, 0.03, 6)), goldMetalMat);
+    sportShield.rotation.x = Math.PI / 2;
+    sportShield.position.set(0.24, 1.62, 0.266);
+    sportUniform.add(sportShield);
+  }
+  bodyGroup.add(sportUniform);
+
+  // 6c. Tantanali Maktab Formasi (Oq parad libosi + oltin epalet + uch rangli lenta)
+  const ceremonialUniform = new THREE.Group();
+  {
+    const uzSkyMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x0ea5e9, roughness: 0.38, metalness: 0.1 }));
+    const uzGreenMat = trackMat(new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.38, metalness: 0.1 }));
+
+    const paradeShell = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.92, 0.88, 0.525)), crispWhiteMat));
+    paradeShell.position.set(0, 1.4, -0.005);
+    ceremonialUniform.add(paradeShell);
+
+    // Navy parade stand collar with gold piping
+    const paradeCollar = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.5, 0.115, 0.525)), navyClothMat));
+    paradeCollar.position.set(0, 1.855, 0.005);
+    ceremonialUniform.add(paradeCollar);
+
+    const collarGoldPiping = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.515, 0.03, 0.535)), goldMetalMat);
+    collarGoldPiping.position.set(0, 1.895, 0.005);
+    ceremonialUniform.add(collarGoldPiping);
+
+    // Gold shoulder epaulettes with crimson center stripe
+    [-0.31, 0.31].forEach((ex) => {
+      const epaulette = enableShadows(new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.25, 0.055, 0.52)), goldMetalMat));
+      epaulette.position.set(ex, 1.865, 0);
+      ceremonialUniform.add(epaulette);
+
+      const epInner = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.11, 0.062, 0.53)), crimsonClothMat);
+      epInner.position.set(ex, 1.865, 0);
+      ceremonialUniform.add(epInner);
+    });
+
+    // Diagonal Uzbekistan tricolor honor sash across chest (sky blue -> white/crimson -> emerald)
+    const sashGroup = new THREE.Group();
+    sashGroup.position.set(0, 1.4, 0.268);
+    sashGroup.rotation.z = -0.62;
+
+    const sashSky = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.052, 0.92, 0.028)), uzSkyMat);
+    sashSky.position.x = -0.054;
+    sashGroup.add(sashSky);
+
+    const sashWhite = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.05, 0.92, 0.028)), crispWhiteMat);
+    sashWhite.position.x = 0;
+    sashGroup.add(sashWhite);
+
+    const sashRedLineL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.014, 0.92, 0.032)), crimsonClothMat);
+    sashRedLineL.position.x = -0.026;
+    sashGroup.add(sashRedLineL);
+
+    const sashRedLineR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.014, 0.92, 0.032)), crimsonClothMat);
+    sashRedLineR.position.x = 0.026;
+    sashGroup.add(sashRedLineR);
+
+    const sashGreen = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.052, 0.92, 0.028)), uzGreenMat);
+    sashGreen.position.x = 0.054;
+    sashGroup.add(sashGreen);
+
+    ceremonialUniform.add(sashGroup);
+
+    // Gold rosette clasp at lower left hip of sash
+    const sashRosette = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.072, 0.072, 0.032, 12)), goldMetalMat);
+    sashRosette.rotation.x = Math.PI / 2;
+    sashRosette.position.set(-0.27, 1.07, 0.275);
+    ceremonialUniform.add(sashRosette);
+
+    // Golden ceremonial parade buttons & bottom hem piping
+    [1.64, 1.46, 1.28, 1.12].forEach((by) => {
+      const btn = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.032, 0.032, 0.032, 12)), goldMetalMat);
+      btn.rotation.x = Math.PI / 2;
+      btn.position.set(0.14, by, 0.264);
+      ceremonialUniform.add(btn);
+    });
+
+    const bottomGoldTrim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.93, 0.045, 0.535)), goldMetalMat);
+    bottomGoldTrim.position.set(0, 0.985, -0.005);
+    ceremonialUniform.add(bottomGoldTrim);
+  }
+  bodyGroup.add(ceremonialUniform);
 
   // --- B) BOSH KIYIMLAR (hat — mounted on headGroup) ---
 
@@ -1165,12 +1438,41 @@ export function createRobloxAvatar(
 
   const syncAppearance = () => {
     const isGirl = currentGender === 'girl' && !isTeacher;
+    const isBoy = currentGender === 'boy' && !isTeacher;
+    const eq = currentEquipped;
 
-    // 1. Toggle base boy/girl 3D hair & skirt/pants silhouettes
-    boyLowerGroup.visible = !isGirl;
-    girlLowerGroup.visible = isGirl;
+    // 1. Strict 3D Gender Safety Guard: NEVER render an item that belongs to the opposite gender!
+    whiteShirtTie.visible = isBoy && eq.outfit === 'white_shirt_tie';
+    schoolVest.visible = isBoy && eq.outfit === 'school_vest';
+    formalBlazer.visible = isBoy && eq.outfit === 'formal_blazer';
+
+    girlBlouseSkirt.visible = isGirl && eq.outfit === 'girl_blouse_skirt';
+    girlVestSkirt.visible = isGirl && eq.outfit === 'girl_vest_skirt';
+    girlApronUniform.visible = isGirl && eq.outfit === 'girl_apron_uniform';
+
+    sportUniform.visible = !isTeacher && eq.outfit === 'sport_uniform';
+    ceremonialUniform.visible = !isTeacher && eq.outfit === 'ceremonial_uniform';
+
+    // 2. Toggle base boy/girl 3D hair & skirt/pants silhouettes
+    const girlWearsSkirt = isGirl && !sportUniform.visible;
+    boyLowerGroup.visible = isBoy && !sportUniform.visible;
+    girlLowerGroup.visible = girlWearsSkirt;
+    girlSkirtGroup.visible = girlWearsSkirt;
+    girlWaistRibbon.visible = girlWearsSkirt && !girlApronUniform.visible;
+
     boyHairGroup.visible = !isGirl;
     girlHairGroup.visible = isGirl;
+
+    // Hide base shirt collar when custom stand-collar outfits are worn
+    collar.visible = isTeacher || (!sportUniform.visible && !ceremonialUniform.visible);
+
+    // Sport stripes & ceremonial gold cuffs
+    leftLeg.sportStripe.visible = sportUniform.visible;
+    rightLeg.sportStripe.visible = sportUniform.visible;
+    leftArm.sportStripe.visible = sportUniform.visible;
+    rightArm.sportStripe.visible = sportUniform.visible;
+    leftArm.ceremonialCuff.visible = ceremonialUniform.visible;
+    rightArm.ceremonialCuff.visible = ceremonialUniform.visible;
 
     if (!isTeacher) {
       pantsMat.color.set(isGirl ? '#F8FAFC' : '#1E3A5F');
@@ -1179,18 +1481,6 @@ export function createRobloxAvatar(
         hairMat.color.set(isGirl ? '#3B2314' : '#2C221E');
       }
     }
-
-    // 2. Strict 3D Gender Safety Guard: NEVER render an item that belongs to the opposite gender!
-    const eq = currentEquipped;
-    const isBoy = currentGender === 'boy' && !isTeacher;
-
-    whiteShirtTie.visible = isBoy && eq.outfit === 'white_shirt_tie';
-    schoolVest.visible = isBoy && eq.outfit === 'school_vest';
-    formalBlazer.visible = isBoy && eq.outfit === 'formal_blazer';
-
-    girlBlouseSkirt.visible = isGirl && eq.outfit === 'girl_blouse_skirt';
-    girlVestSkirt.visible = isGirl && eq.outfit === 'girl_vest_skirt';
-    girlApronUniform.visible = isGirl && eq.outfit === 'girl_apron_uniform';
 
     chustDoppi.visible = isBoy && eq.hat === 'chust_doppi';
     girlWhiteBows.visible = isGirl && eq.hat === 'girl_white_bows';
@@ -1208,15 +1498,38 @@ export function createRobloxAvatar(
     honorMedal.visible = eq.medal === 'honor_medal';
     scholarBook.visible = eq.book === 'scholar_book' && heldTrashKind === null;
 
-    // Keep medal cleanly in front of thicker blazer/vest/apron layers
+    // Keep medal cleanly in front of thicker blazer/vest/apron/parade layers
     honorMedal.position.z =
-      formalBlazer.visible || schoolVest.visible || girlVestSkirt.visible || girlApronUniform.visible
-        ? 0.305
+      ceremonialUniform.visible ||
+      sportUniform.visible ||
+      formalBlazer.visible ||
+      schoolVest.visible ||
+      girlVestSkirt.visible ||
+      girlApronUniform.visible
+        ? 0.308
         : 0.275;
 
-    // 3. Synchronize shirt, sleeve, and skirt colors with active gender-valid outfit
+    // 3. Synchronize shirt, sleeve, skirt, pants, and shoe colors with active gender-valid outfit
     if (!isTeacher) {
-      if (whiteShirtTie.visible || schoolVest.visible) {
+      if (sportUniform.visible) {
+        shirtMat.color.set('#0284C7');
+        sleeveMat.color.set('#0284C7');
+        pantsMat.color.set('#0F172A');
+        shoeMat.color.set('#0369A1');
+        leftArm.cuff.visible = true;
+        rightArm.cuff.visible = true;
+      } else if (ceremonialUniform.visible) {
+        shirtMat.color.set('#F8FAFC');
+        sleeveMat.color.set('#F8FAFC');
+        pantsMat.color.set(isGirl ? '#F8FAFC' : '#0F172A');
+        shoeMat.color.set('#0F172A');
+        skirtMat.color.set('#0F172A');
+        skirtPleatMat.color.set('#1E293B');
+        skirtHemMat.color.set('#F59E0B');
+        waistTrimMat.color.set('#F59E0B');
+        leftArm.cuff.visible = true;
+        rightArm.cuff.visible = true;
+      } else if (whiteShirtTie.visible || schoolVest.visible) {
         shirtMat.color.set('#F8FAFC');
         sleeveMat.color.set('#F8FAFC');
         leftArm.cuff.visible = true;
@@ -1230,6 +1543,8 @@ export function createRobloxAvatar(
         shirtMat.color.set('#F8FAFC');
         sleeveMat.color.set('#F8FAFC');
         skirtMat.color.set('#1E3A8A');
+        skirtPleatMat.color.set('#172554');
+        skirtHemMat.color.set('#172554');
         waistTrimMat.color.set('#1E3A8A');
         leftArm.cuff.visible = true;
         rightArm.cuff.visible = true;
@@ -1237,13 +1552,19 @@ export function createRobloxAvatar(
         shirtMat.color.set('#172554');
         sleeveMat.color.set('#172554');
         skirtMat.color.set('#172554');
+        skirtPleatMat.color.set('#0F172A');
+        skirtHemMat.color.set('#0F172A');
         waistTrimMat.color.set('#FFFFFF');
         leftArm.cuff.visible = true;
         rightArm.cuff.visible = true;
       } else {
         shirtMat.color.set(baseShirtHex);
         sleeveMat.color.set(baseShirtHex);
-        skirtMat.color.copy(new THREE.Color(baseShirtHex).lerp(new THREE.Color('#0F172A'), 0.14));
+        const baseSkirt = new THREE.Color(baseShirtHex).lerp(new THREE.Color('#0F172A'), 0.14);
+        const pleatTone = new THREE.Color(baseShirtHex).lerp(new THREE.Color('#0F172A'), 0.32);
+        skirtMat.color.copy(baseSkirt);
+        skirtPleatMat.color.copy(pleatTone);
+        skirtHemMat.color.copy(pleatTone);
         waistTrimMat.color.set(options.ribbonColor ?? '#FDE047');
         leftArm.cuff.visible = false;
         rightArm.cuff.visible = false;
@@ -1265,6 +1586,11 @@ export function createRobloxAvatar(
     qarsak: 2.8,
     quvonch: 2.85,
     milliy_raqs: 3.0,
+    urm_warmup: 3.2,
+    somersault: 2.2,
+    bar_hang: 3.0,
+    ladder_climb: 3.0,
+    throw_ball: 2.0,
   };
 
   const triggerEmote = (emote: AvatarEmote, durationSec?: number) => {
@@ -1298,6 +1624,7 @@ export function createRobloxAvatar(
 
     const isCarryingTrash = heldTrashKind !== null;
     const restRightArmX = isCarryingTrash ? -0.62 : scholarBook.visible ? -0.28 : 0;
+    const legSwingScale = girlSkirtGroup.visible ? 0.65 : 1.0;
 
     if (isAirborne) {
       leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -2.1, 10, dt);
@@ -1307,16 +1634,16 @@ export function createRobloxAvatar(
         10,
         dt
       );
-      leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0.38, 10, dt);
-      rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -0.35, 10, dt);
+      leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0.38 * legSwingScale, 10, dt);
+      rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -0.35 * legSwingScale, 10, dt);
       bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, 0, 12, dt);
       headGroup.rotation.z = THREE.MathUtils.damp(headGroup.rotation.z, 0, 10, dt);
       dampSecondaryAxesToNeutral(dt, 11);
     } else if (speedRatio > 0.05) {
       walkPhase += dt * (8.5 + speedRatio * 4.5);
       const swing = Math.sin(walkPhase) * 0.72 * Math.min(1, speedRatio);
-      leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, swing, 16, dt);
-      rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -swing, 16, dt);
+      leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, swing * legSwingScale, 16, dt);
+      rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -swing * legSwingScale, 16, dt);
       leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -swing * 0.82, 16, dt);
       rightArmPivot.rotation.x = THREE.MathUtils.damp(
         rightArmPivot.rotation.x,
@@ -1567,6 +1894,30 @@ export function createRobloxAvatar(
           9,
           dt
         );
+      } else if (activeEmote === 'urm_warmup') {
+        const pulse = Math.sin(t * 8.0);
+        leftArmPivot.rotation.x = -2.2 + pulse * 0.5;
+        rightArmPivot.rotation.x = -2.2 - pulse * 0.5;
+        bodyGroup.position.y = Math.abs(pulse) * 0.15;
+      } else if (activeEmote === 'somersault') {
+        bodyGroup.rotation.x = (t / emoteDuration) * Math.PI * 2;
+        bodyGroup.position.y = Math.sin((t / emoteDuration) * Math.PI) * 0.6;
+      } else if (activeEmote === 'bar_hang') {
+        leftArmPivot.rotation.x = -2.8;
+        rightArmPivot.rotation.x = -2.8;
+        leftLegPivot.rotation.x = 0.8;
+        rightLegPivot.rotation.x = 0.8;
+        bodyGroup.position.y = 0.4;
+      } else if (activeEmote === 'ladder_climb') {
+        const climb = Math.sin(t * 12.0);
+        leftArmPivot.rotation.x = -2.0 + climb * 0.6;
+        rightArmPivot.rotation.x = -2.0 - climb * 0.6;
+        leftLegPivot.rotation.x = climb * 0.5;
+        rightLegPivot.rotation.x = -climb * 0.5;
+      } else if (activeEmote === 'throw_ball') {
+        const throwProg = Math.min(1, t / emoteDuration);
+        rightArmPivot.rotation.x = THREE.MathUtils.lerp(-0.5, -2.6, throwProg);
+        bodyGroup.rotation.y = THREE.MathUtils.lerp(0, -0.4, throwProg);
       }
     } else {
       leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0, 10, dt);
@@ -1648,6 +1999,8 @@ export function createRobloxAvatar(
       girlBlouseSkirt,
       girlVestSkirt,
       girlApronUniform,
+      sportUniform,
+      ceremonialUniform,
       chustDoppi,
       girlWhiteBows,
       iroqiDoppi,

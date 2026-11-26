@@ -61,7 +61,7 @@ export const AwardsModal: React.FC<AwardsModalProps> = ({ profile, onClose }) =>
 
   return (
     <AutoFitModal overlayClassName="bg-slate-900/60 z-50">
-      <div className="w-[940px] max-w-[95vw] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="w-[1080px] max-w-[96vw] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-6 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
@@ -92,8 +92,8 @@ export const AwardsModal: React.FC<AwardsModalProps> = ({ profile, onClose }) =>
           </button>
         </div>
 
-        {/* 2x2 Category Showcase Grid (Zero scroll via AutoFitModal) */}
-        <div className="p-5 bg-slate-50/80 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* 5-Category Showcase Grid (Zero scroll via AutoFitModal) */}
+        <div className="p-4 sm:p-5 bg-slate-50/80 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {AWARD_CATEGORIES.map((cat) => {
             const awards = getAwardsByCategory(cat.id);
             const currentVal = getStatForCategory(profile.stats, cat.id);

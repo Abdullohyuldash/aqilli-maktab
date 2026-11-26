@@ -1,4 +1,4 @@
-export type SubjectId = 'math' | 'english' | 'cs' | 'science' | 'alifbe';
+export type SubjectId = 'math' | 'english' | 'cs' | 'science' | 'alifbe' | 'pe';
 
 export type DifficultyTier = 'elementary' | 'middle' | 'high';
 
@@ -16,6 +16,9 @@ export type ShopItemId =
   | 'girl_blouse_skirt'
   | 'girl_vest_skirt'
   | 'girl_apron_uniform'
+  // Universal student outfits (both boy & girl)
+  | 'sport_uniform'
+  | 'ceremonial_uniform'
   // Hats / Headwear
   | 'chust_doppi'
   | 'girl_white_bows'
@@ -51,7 +54,9 @@ export interface EquippedAccessories {
     | 'formal_blazer'
     | 'girl_blouse_skirt'
     | 'girl_vest_skirt'
-    | 'girl_apron_uniform';
+    | 'girl_apron_uniform'
+    | 'sport_uniform'
+    | 'ceremonial_uniform';
   hat?: 'chust_doppi' | 'girl_white_bows' | 'iroqi_doppi' | 'scholar_cap';
   bag?: 'basic_backpack' | 'classic_satchel' | 'gold_backpack';
   watch?: 'school_watch';
@@ -59,7 +64,7 @@ export interface EquippedAccessories {
   book?: 'scholar_book';
 }
 
-export type AwardCategoryId = 'cleanliness' | 'greeting' | 'math' | 'language';
+export type AwardCategoryId = 'cleanliness' | 'greeting' | 'math' | 'language' | 'sport';
 export type AwardTier = 'bronze' | 'silver' | 'gold';
 
 export interface PlayerStats {
@@ -67,6 +72,7 @@ export interface PlayerStats {
   greetingsGiven: number;
   mathCompleted: number;
   languageCompleted: number;
+  sportCompleted: number;
 }
 
 export interface AwardDefinition {
@@ -105,7 +111,7 @@ export type FloorNumber = 1 | 2 | 3;
 
 export type ComingSoonZoneId = 'ona_tili' | 'tarix' | 'fizika';
 
-export type ZoneId = SubjectId | 'shop' | 'schedule' | 'elevator' | ComingSoonZoneId;
+export type ZoneId = SubjectId | 'shop' | 'schedule' | 'elevator' | ComingSoonZoneId | 'exit_gym';
 
 export interface WorldZone {
   id: ZoneId;
@@ -130,7 +136,16 @@ export interface VirtualControlsState {
   jump: boolean;
 }
 
-export type AvatarEmote = 'salom' | 'qarsak' | 'quvonch' | 'milliy_raqs';
+export type AvatarEmote =
+  | 'salom'
+  | 'qarsak'
+  | 'quvonch'
+  | 'milliy_raqs'
+  | 'urm_warmup'
+  | 'somersault'
+  | 'bar_hang'
+  | 'ladder_climb'
+  | 'throw_ball';
 
 export interface EmoteRequest {
   emote: AvatarEmote;
