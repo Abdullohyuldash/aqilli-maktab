@@ -6,6 +6,7 @@ import {
   EquippedAccessories,
   EthicsFeedbackToast,
   FloorNumber,
+  GymGameSnapshot,
   PlayerGender,
   PlayerProfile,
   ShopItem,
@@ -38,6 +39,8 @@ import { ScheduleModal } from './components/ScheduleModal';
 import { LiftModal } from './components/LiftModal';
 import { AwardCelebrationPopup, AwardsModal } from './components/AwardsModal';
 import { GymHudOverlay } from './components/GymHudOverlay';
+import { GymLockerModal } from './components/GymLockerModal';
+import { ConfettiCanvas } from './components/ConfettiCanvas';
 
 export default function App() {
   const [savedExists] = useState<boolean>(() => Boolean(loadProfile()?.name));
@@ -67,6 +70,12 @@ export default function App() {
 
   const [muted, setMuted] = useState(false);
   const [inGym, setInGym] = useState(false);
+  const [gymLockerOpen, setGymLockerOpen] = useState(false);
+  const [gymWearEquipped, setGymWearEquipped] = useState(false);
+  const [gymSnapshot, setGymSnapshot] = useState<GymGameSnapshot | null>(null);
+  const [gymActionToken, setGymActionToken] = useState(0);
+  const [gymSpaceToken, setGymSpaceToken] = useState(0);
+  const [gymConfettiActive, setGymConfettiActive] = useState(false);
   const [gymTransition, setGymTransition] = useState<string | null>(null);
   const [nudgeToken, setNudgeToken] = useState(0);
   const [emoteRequest, setEmoteRequest] = useState<EmoteRequest | null>(null);
@@ -84,6 +93,8 @@ export default function App() {
   const emoteClearTimerRef = useRef<number | null>(null);
   const victoryEmoteTimerRef = useRef<number | null>(null);
   const ethicsToastTimerRef = useRef<number | null>(null);
+  const gymConfettiTimerRef = useRef<number | null>(null);
+  const gymPrevCompletedRef = useRef<boolean>(false);
 
   const virtualControlsRef = useRef<VirtualControlsState>({
     up: false,
@@ -93,13 +104,14 @@ export default function App() {
     jump: false,
   });
 
-  // Clean up elevator, emote & ethics toast timers on unmount
+  // Clean up elevator, emote, confetti & ethics toast timers on unmount
   useEffect(() => {
     return () => {
       transitionTimersRef.current.forEach((id) => window.clearTimeout(id));
       if (emoteClearTimerRef.current !== null) window.clearTimeout(emoteClearTimerRef.current);
       if (victoryEmoteTimerRef.current !== null) window.clearTimeout(victoryEmoteTimerRef.current);
       if (ethicsToastTimerRef.current !== null) window.clearTimeout(ethicsToastTimerRef.current);
+      if (gymConfettiTimerRef.current !== null) window.clearTimeout(gymConfettiTimerRef.current);
     };
   }, []);
 
@@ -133,6 +145,8 @@ export default function App() {
   const isPaused =
     activeModal.type !== 'none' ||
     elevatorTransition !== null ||
+    gymTransition !== null ||
+    gymLockerOpen ||
     awardCelebrationQueue.length > 0;
 
   const handleStartGame = (
@@ -155,35 +169,59 @@ export default function App() {
     setScreen('school');
   };
 
-  const handleEnterZone = useCallback((zone: ZoneId) => {
-    if (zone === 'elevator') {
-      soundEngine.playEquip();
-      setActiveModal({ type: 'lift' });
-    } else if (zone === 'shop') {
-      soundEngine.playEquip();
-      setActiveModal({ type: 'shop' });
-    } else if (zone === 'schedule') {
-      soundEngine.playEquip();
-      setActiveModal({ type: 'schedule' });
-    } else if (zone === 'pe') {
-      soundEngine.playEquip();
-      setGymTransition("🏃 Sport zaliga kirilmoqda...");
-      window.setTimeout(() => {
-        setInGym(true);
-        setGymTransition(null);
-      }, 500);
-    } else if (zone === 'exit_gym') {
-      soundEngine.playEquip();
-      setGymTransition("Maktab koridoriga chiqilmoqda...");
-      window.setTimeout(() => {
-        setInGym(false);
-        setGymTransition(null);
-      }, 500);
-    } else if (zone in SUBJECT_META) {
-      soundEngine.playEquip();
-      setActiveModal({ type: 'lesson', subject: zone as SubjectId });
-    }
+  const enterGym = useCallback(() => {
+    soundEngine.playEquip();
+    setNearbyInactiveZone(null);
+    setNearbyComingSoon(null);
+    setTeacherGreetingPrompt(null);
+    setTrashPrompt(null);
+    setGymTransition('🏃 Sport zaliga kirilmoqda...');
+    window.setTimeout(() => {
+      setCurrentFloor(2);
+      setInGym(true);
+      setGymLockerOpen(true);
+      setGymWearEquipped(false);
+      gymPrevCompletedRef.current = false;
+      setGymTransition(null);
+    }, 500);
   }, []);
+
+  const exitGym = useCallback(() => {
+    soundEngine.playEquip();
+    setGymLockerOpen(false);
+    setGymConfettiActive(false);
+    setGymTransition('Maktab koridoriga chiqilmoqda...');
+    window.setTimeout(() => {
+      setInGym(false);
+      setGymWearEquipped(false);
+      setGymSnapshot(null);
+      gymPrevCompletedRef.current = false;
+      setGymTransition(null);
+    }, 500);
+  }, []);
+
+  const handleEnterZone = useCallback(
+    (zone: ZoneId) => {
+      if (zone === 'elevator') {
+        soundEngine.playEquip();
+        setActiveModal({ type: 'lift' });
+      } else if (zone === 'shop') {
+        soundEngine.playEquip();
+        setActiveModal({ type: 'shop' });
+      } else if (zone === 'schedule') {
+        soundEngine.playEquip();
+        setActiveModal({ type: 'schedule' });
+      } else if (zone === 'pe') {
+        enterGym();
+      } else if (zone === 'exit_gym') {
+        exitGym();
+      } else if (zone in SUBJECT_META) {
+        soundEngine.playEquip();
+        setActiveModal({ type: 'lesson', subject: zone as SubjectId });
+      }
+    },
+    [enterGym, exitGym]
+  );
 
   const closeModalAndNudge = useCallback(() => {
     setActiveModal({ type: 'none' });
@@ -278,15 +316,23 @@ export default function App() {
     setTrashPickupToken((t) => t + 1);
   }, [isPaused, canTriggerTrashAction]);
 
-  // Press 'E' keyboard shortcut to politely greet Ustoz OR pick up / throw trash into bin
+  // Press 'E' keyboard shortcut for 3D Gym interactions OR politely greet Ustoz OR pick up / throw trash
   useEffect(() => {
-    if (screen !== 'school' || isPaused || (!teacherGreetingPrompt && !canTriggerTrashAction)) return;
+    if (
+      screen !== 'school' ||
+      isPaused ||
+      (!inGym && !teacherGreetingPrompt && !canTriggerTrashAction)
+    ) {
+      return;
+    }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'KeyE') return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       e.preventDefault();
-      if (teacherGreetingPrompt) {
+      if (inGym) {
+        setGymActionToken((t) => t + 1);
+      } else if (teacherGreetingPrompt) {
         handleGreetTeacher();
       } else if (canTriggerTrashAction) {
         handlePickupTrash();
@@ -297,6 +343,7 @@ export default function App() {
   }, [
     screen,
     isPaused,
+    inGym,
     teacherGreetingPrompt,
     canTriggerTrashAction,
     handleGreetTeacher,
@@ -383,6 +430,65 @@ export default function App() {
       });
     },
     []
+  );
+
+  const handleLockerAttemptSchoolUniform = useCallback(() => {
+    soundEngine.playGreetingWarning();
+    setProfile((prev) => {
+      const updated: PlayerProfile = {
+        ...prev,
+        coins: Math.max(0, prev.coins - 5),
+      };
+      saveProfile(updated);
+      return updated;
+    });
+    showEthicsToast({
+      kind: 'penalty',
+      deltaCoins: -5,
+      title: '-5 🪙 Sport zaliga maktab formasi va sumka bilan kirish mumkin emas!',
+      subtitle: 'Iltimos, sport formasini kiying.',
+    });
+  }, [showEthicsToast]);
+
+  const handleLockerEquipSportswear = useCallback(() => {
+    soundEngine.playGreetingReward();
+    setProfile((prev) => {
+      const updated: PlayerProfile = {
+        ...prev,
+        coins: prev.coins + 10,
+      };
+      saveProfile(updated);
+      return updated;
+    });
+    setGymWearEquipped(true);
+    setGymLockerOpen(false);
+    showEthicsToast({
+      kind: 'reward',
+      deltaCoins: 10,
+      title: '+10 ⭐ Barakalla! Sport formasi tayyor!',
+      subtitle: 'Endi 3D Sport zalida mashqlarni boshlashingiz mumkin.',
+    });
+  }, [showEthicsToast]);
+
+  const handleGymSnapshot = useCallback(
+    (snap: GymGameSnapshot) => {
+      setGymSnapshot(snap);
+      if (snap.completed && !gymPrevCompletedRef.current) {
+        gymPrevCompletedRef.current = true;
+        handleCompleteLesson('pe', 25);
+        setGymConfettiActive(true);
+        if (gymConfettiTimerRef.current !== null) {
+          window.clearTimeout(gymConfettiTimerRef.current);
+        }
+        gymConfettiTimerRef.current = window.setTimeout(() => {
+          setGymConfettiActive(false);
+          gymConfettiTimerRef.current = null;
+        }, 3600);
+      } else if (!snap.completed) {
+        gymPrevCompletedRef.current = false;
+      }
+    },
+    [handleCompleteLesson]
   );
 
   const handleTrashOutcome = useCallback(
@@ -598,6 +704,10 @@ export default function App() {
         equipped={profile.equipped}
         activeSubject={activeSubject}
         inGym={inGym}
+        gymWearEquipped={gymWearEquipped}
+        activePeLessonIndex={activePeLessonIndex}
+        gymActionToken={gymActionToken}
+        gymSpaceToken={gymSpaceToken}
         isPaused={isPaused}
         nudgeToken={nudgeToken}
         elevatorTeleportToken={elevatorTeleportToken}
@@ -612,6 +722,8 @@ export default function App() {
         onTeacherGreetingOutcome={handleTeacherGreetingOutcome}
         onTrashPromptChange={setTrashPrompt}
         onTrashOutcome={handleTrashOutcome}
+        onGymSnapshot={handleGymSnapshot}
+        onGymPlayerEmote={(emote, dur) => setActiveEmote(dur ? emote : null)}
         onEmoteEnded={() => {
           setActiveEmote(null);
           if (emoteClearTimerRef.current !== null) {
@@ -621,15 +733,24 @@ export default function App() {
         }}
       />
 
-      {/* Always-visible lightweight Game HUD or Gym HUD */}
+      {/* Always-visible lightweight Game HUD or Pure 3D Gym HUD */}
       {inGym ? (
         <GymHudOverlay
           profile={profile}
           activePeLessonIndex={activePeLessonIndex}
-          onSelectLesson={setActivePeLessonIndex}
-          onExitGym={() => handleEnterZone('exit_gym')}
-          onCompleteLesson={handleCompleteLesson}
-          onTriggerEmote={(emote, dur, fanfare) => handleTriggerEmote(emote, dur, fanfare)}
+          snapshot={gymSnapshot}
+          muted={muted}
+          ethicsFeedback={ethicsFeedback}
+          virtualControlsRef={virtualControlsRef}
+          onToggleMute={handleToggleMute}
+          onSelectLesson={(idx) => {
+            gymPrevCompletedRef.current = false;
+            setGymConfettiActive(false);
+            setActivePeLessonIndex(idx);
+          }}
+          onActionTrigger={() => setGymActionToken((t) => t + 1)}
+          onSpaceTapTrigger={() => setGymSpaceToken((t) => t + 1)}
+          onExitGym={exitGym}
         />
       ) : (
         <HudOverlay
@@ -668,7 +789,11 @@ export default function App() {
           }}
           onEnterSpecificSubject={(subject) => {
             soundEngine.playEquip();
-            setActiveModal({ type: 'lesson', subject });
+            if (subject === 'pe') {
+              enterGym();
+            } else {
+              setActiveModal({ type: 'lesson', subject });
+            }
           }}
           onTriggerEmote={(emote, durationSec) => {
             if (emote === 'salom' && teacherGreetingPrompt && !isPaused) {
@@ -682,18 +807,18 @@ export default function App() {
         />
       )}
 
-      {/* Gym Exit Button when inside Sport zali */}
-      {inGym && !gymTransition && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-          <button
-            type="button"
-            onClick={() => handleEnterZone('exit_gym')}
-            className="px-5 py-2.5 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-display font-bold text-sm shadow-xl flex items-center gap-2 cursor-pointer border-2 border-white"
-          >
-            <span>🚪 Zaldan chiqish</span>
-          </button>
-        </div>
+      {/* Pre-Gym Locker Room Outfit Check Modal */}
+      {inGym && gymLockerOpen && !gymTransition && (
+        <GymLockerModal
+          profile={profile}
+          onAttemptSchoolUniform={handleLockerAttemptSchoolUniform}
+          onEquipSportswear={handleLockerEquipSportswear}
+          onExitGym={exitGym}
+        />
       )}
+
+      {/* Confetti Celebration on completing a 3D PE lesson */}
+      <ConfettiCanvas active={gymConfettiActive} zIndexClass="z-40" />
 
       {/* 0.5-Second Elevator Floor / Gym Transition Overlay */}
       {(elevatorTransition || gymTransition) && (

@@ -36,6 +36,7 @@ export interface RobloxAvatarRig {
   setGender: (gender: PlayerGender) => void;
   applyAccessories: (equipped: EquippedAccessories) => void;
   setHeldTrash: (kind: TrashKind | null) => void;
+  setGymWear: (enabled: boolean) => void;
   triggerEmote: (emote: AvatarEmote, durationSec?: number) => void;
   isEmoteActive: () => boolean;
   updateAnimation: (dt: number, speedRatio: number, isAirborne: boolean, yHeight: number) => void;
@@ -47,6 +48,7 @@ export interface AvatarStyleOptions {
   variant?: 'student' | 'teacher';
   hairColor?: string;
   ribbonColor?: string;
+  coachTracksuit?: boolean;
 }
 
 export function createRobloxAvatar(
@@ -58,6 +60,7 @@ export function createRobloxAvatar(
   let currentGender: PlayerGender = options.gender ?? 'boy';
   const variant = options.variant ?? 'student';
   const isTeacher = variant === 'teacher';
+  const isCoach = Boolean(options.coachTracksuit);
 
   let baseShirtHex = initialShirtColor;
   let currentEquipped: EquippedAccessories = { ...initialEquipped };
@@ -856,6 +859,29 @@ export function createRobloxAvatar(
     sportShield.rotation.x = Math.PI / 2;
     sportShield.position.set(0.24, 1.62, 0.266);
     sportUniform.add(sportShield);
+
+    // Coach lanyard & silver whistle (only visible when isCoach)
+    if (isCoach) {
+      const lanyardMat = trackMat(new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.4 }));
+      const lanyardL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.035, 0.36, 0.025)), lanyardMat);
+      lanyardL.position.set(-0.07, 1.72, 0.268);
+      lanyardL.rotation.z = 0.22;
+      sportUniform.add(lanyardL);
+
+      const lanyardR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.035, 0.36, 0.025)), lanyardMat);
+      lanyardR.position.set(0.07, 1.72, 0.268);
+      lanyardR.rotation.z = -0.22;
+      sportUniform.add(lanyardR);
+
+      const whistleBody = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.045, 0.045, 0.09, 12)), silverMetalMat);
+      whistleBody.rotation.z = Math.PI / 2;
+      whistleBody.position.set(0, 1.54, 0.285);
+      sportUniform.add(whistleBody);
+
+      const whistleTip = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, 0.04, 0.045)), silverMetalMat);
+      whistleTip.position.set(0.05, 1.55, 0.285);
+      sportUniform.add(whistleTip);
+    }
   }
   bodyGroup.add(sportUniform);
 
@@ -1441,17 +1467,19 @@ export function createRobloxAvatar(
     const isBoy = currentGender === 'boy' && !isTeacher;
     const eq = currentEquipped;
 
-    // 1. Strict 3D Gender Safety Guard: NEVER render an item that belongs to the opposite gender!
-    whiteShirtTie.visible = isBoy && eq.outfit === 'white_shirt_tie';
-    schoolVest.visible = isBoy && eq.outfit === 'school_vest';
-    formalBlazer.visible = isBoy && eq.outfit === 'formal_blazer';
+    // 1. Strict 3D Gender Safety Guard + Gym Sportswear override
+    const isSportActive = gymWearActive || isCoach || (!isTeacher && eq.outfit === 'sport_uniform');
 
-    girlBlouseSkirt.visible = isGirl && eq.outfit === 'girl_blouse_skirt';
-    girlVestSkirt.visible = isGirl && eq.outfit === 'girl_vest_skirt';
-    girlApronUniform.visible = isGirl && eq.outfit === 'girl_apron_uniform';
+    whiteShirtTie.visible = !gymWearActive && isBoy && eq.outfit === 'white_shirt_tie';
+    schoolVest.visible = !gymWearActive && isBoy && eq.outfit === 'school_vest';
+    formalBlazer.visible = !gymWearActive && isBoy && eq.outfit === 'formal_blazer';
 
-    sportUniform.visible = !isTeacher && eq.outfit === 'sport_uniform';
-    ceremonialUniform.visible = !isTeacher && eq.outfit === 'ceremonial_uniform';
+    girlBlouseSkirt.visible = !gymWearActive && isGirl && eq.outfit === 'girl_blouse_skirt';
+    girlVestSkirt.visible = !gymWearActive && isGirl && eq.outfit === 'girl_vest_skirt';
+    girlApronUniform.visible = !gymWearActive && isGirl && eq.outfit === 'girl_apron_uniform';
+
+    sportUniform.visible = isSportActive;
+    ceremonialUniform.visible = !gymWearActive && !isTeacher && eq.outfit === 'ceremonial_uniform';
 
     // 2. Toggle base boy/girl 3D hair & skirt/pants silhouettes
     const girlWearsSkirt = isGirl && !sportUniform.visible;
@@ -1464,7 +1492,7 @@ export function createRobloxAvatar(
     girlHairGroup.visible = isGirl;
 
     // Hide base shirt collar when custom stand-collar outfits are worn
-    collar.visible = isTeacher || (!sportUniform.visible && !ceremonialUniform.visible);
+    collar.visible = (isTeacher && !isCoach) || (!sportUniform.visible && !ceremonialUniform.visible);
 
     // Sport stripes & ceremonial gold cuffs
     leftLeg.sportStripe.visible = sportUniform.visible;
@@ -1480,23 +1508,28 @@ export function createRobloxAvatar(
       if (!options.hairColor) {
         hairMat.color.set(isGirl ? '#3B2314' : '#2C221E');
       }
+    } else if (isCoach) {
+      shirtMat.color.set('#0284C7');
+      sleeveMat.color.set('#0284C7');
+      pantsMat.color.set('#0F172A');
+      shoeMat.color.set('#F8FAFC');
     }
 
-    chustDoppi.visible = isBoy && eq.hat === 'chust_doppi';
+    chustDoppi.visible = !gymWearActive && isBoy && eq.hat === 'chust_doppi';
     girlWhiteBows.visible = isGirl && eq.hat === 'girl_white_bows';
-    iroqiDoppi.visible = isGirl && eq.hat === 'iroqi_doppi';
-    scholarCap.visible = !isTeacher && eq.hat === 'scholar_cap';
+    iroqiDoppi.visible = !gymWearActive && isGirl && eq.hat === 'iroqi_doppi';
+    scholarCap.visible = !gymWearActive && !isTeacher && eq.hat === 'scholar_cap';
 
     // Hide tiny default colorful ponytail bows when big 3D Oq Maktab Bantigi is equipped
     girlDefaultBowsGroup.visible = isGirl && !girlWhiteBows.visible;
 
-    basicBackpack.visible = eq.bag === 'basic_backpack';
-    classicSatchel.visible = eq.bag === 'classic_satchel';
-    goldBackpack.visible = eq.bag === 'gold_backpack';
+    basicBackpack.visible = !gymWearActive && eq.bag === 'basic_backpack';
+    classicSatchel.visible = !gymWearActive && eq.bag === 'classic_satchel';
+    goldBackpack.visible = !gymWearActive && eq.bag === 'gold_backpack';
 
     schoolWatch.visible = eq.watch === 'school_watch';
     honorMedal.visible = eq.medal === 'honor_medal';
-    scholarBook.visible = eq.book === 'scholar_book' && heldTrashKind === null;
+    scholarBook.visible = !gymWearActive && eq.book === 'scholar_book' && heldTrashKind === null;
 
     // Keep medal cleanly in front of thicker blazer/vest/apron/parade layers
     honorMedal.position.z =
@@ -1515,7 +1548,7 @@ export function createRobloxAvatar(
         shirtMat.color.set('#0284C7');
         sleeveMat.color.set('#0284C7');
         pantsMat.color.set('#0F172A');
-        shoeMat.color.set('#0369A1');
+        shoeMat.color.set('#F8FAFC');
         leftArm.cuff.visible = true;
         rightArm.cuff.visible = true;
       } else if (ceremonialUniform.visible) {
@@ -1570,6 +1603,12 @@ export function createRobloxAvatar(
         rightArm.cuff.visible = false;
       }
     }
+  };
+
+  let gymWearActive = false;
+  const setGymWear = (enabled: boolean) => {
+    gymWearActive = enabled;
+    syncAppearance();
   };
 
   syncAppearance();
@@ -1895,29 +1934,45 @@ export function createRobloxAvatar(
           dt
         );
       } else if (activeEmote === 'urm_warmup') {
-        const pulse = Math.sin(t * 8.0);
-        leftArmPivot.rotation.x = -2.2 + pulse * 0.5;
-        rightArmPivot.rotation.x = -2.2 - pulse * 0.5;
-        bodyGroup.position.y = Math.abs(pulse) * 0.15;
+        const isReturning = remaining < 0.35;
+        const wave = Math.sin(t * 7.2);
+        const squat = (Math.sin(t * 3.6) + 1) * 0.5;
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, isReturning ? 0 : -1.8 + wave * 0.75, 14, dt);
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, isReturning ? restRightArmX : -1.8 - wave * 0.75, 14, dt);
+        leftArmPivot.rotation.z = THREE.MathUtils.damp(leftArmPivot.rotation.z, isReturning ? 0 : -0.45 - Math.abs(wave) * 0.35, 12, dt);
+        rightArmPivot.rotation.z = THREE.MathUtils.damp(rightArmPivot.rotation.z, isReturning ? 0 : 0.45 + Math.abs(wave) * 0.35, 12, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, isReturning ? 0 : -squat * 0.42, 12, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, isReturning ? 0 : -squat * 0.42, 12, dt);
+        bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, isReturning ? 0 : -squat * 0.16 + 0.08, 12, dt);
+        headGroup.rotation.x = THREE.MathUtils.damp(headGroup.rotation.x, isReturning ? 0 : wave * 0.14, 10, dt);
       } else if (activeEmote === 'somersault') {
-        bodyGroup.rotation.x = (t / emoteDuration) * Math.PI * 2;
-        bodyGroup.position.y = Math.sin((t / emoteDuration) * Math.PI) * 0.6;
+        const p = Math.min(1, t / emoteDuration);
+        bodyGroup.rotation.x = p * Math.PI * 2;
+        bodyGroup.position.y = 0.35 + Math.sin(p * Math.PI) * 0.65;
+        leftArmPivot.rotation.x = -1.6;
+        rightArmPivot.rotation.x = -1.6;
+        leftLegPivot.rotation.x = -0.9;
+        rightLegPivot.rotation.x = -0.9;
       } else if (activeEmote === 'bar_hang') {
-        leftArmPivot.rotation.x = -2.8;
-        rightArmPivot.rotation.x = -2.8;
-        leftLegPivot.rotation.x = 0.8;
-        rightLegPivot.rotation.x = 0.8;
-        bodyGroup.position.y = 0.4;
+        const kneeRaise = (Math.sin(t * 5.2) + 1) * 0.5;
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -2.95, 14, dt);
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, -2.95, 14, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, -0.2 - kneeRaise * 1.15, 14, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -0.2 - kneeRaise * 1.15, 14, dt);
+        bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, 0.55 + Math.sin(t * 2.6) * 0.08, 12, dt);
       } else if (activeEmote === 'ladder_climb') {
-        const climb = Math.sin(t * 12.0);
-        leftArmPivot.rotation.x = -2.0 + climb * 0.6;
-        rightArmPivot.rotation.x = -2.0 - climb * 0.6;
-        leftLegPivot.rotation.x = climb * 0.5;
-        rightLegPivot.rotation.x = -climb * 0.5;
+        const climb = Math.sin(t * 10.5);
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -2.1 + climb * 0.72, 16, dt);
+        rightArmPivot.rotation.x = THREE.MathUtils.damp(rightArmPivot.rotation.x, -2.1 - climb * 0.72, 16, dt);
+        leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, -0.35 - climb * 0.55, 16, dt);
+        rightLegPivot.rotation.x = THREE.MathUtils.damp(rightLegPivot.rotation.x, -0.35 + climb * 0.55, 16, dt);
+        bodyGroup.position.y = THREE.MathUtils.damp(bodyGroup.position.y, 0.25 + Math.abs(climb) * 0.35, 12, dt);
       } else if (activeEmote === 'throw_ball') {
-        const throwProg = Math.min(1, t / emoteDuration);
-        rightArmPivot.rotation.x = THREE.MathUtils.lerp(-0.5, -2.6, throwProg);
-        bodyGroup.rotation.y = THREE.MathUtils.lerp(0, -0.4, throwProg);
+        const p = Math.min(1, t / emoteDuration);
+        const armAngle = p < 0.35 ? THREE.MathUtils.lerp(-0.3, -2.75, p / 0.35) : THREE.MathUtils.lerp(-2.75, -0.35, (p - 0.35) / 0.65);
+        rightArmPivot.rotation.x = armAngle;
+        leftArmPivot.rotation.x = THREE.MathUtils.damp(leftArmPivot.rotation.x, -0.6, 12, dt);
+        bodyGroup.rotation.y = Math.sin(p * Math.PI) * -0.45;
       }
     } else {
       leftLegPivot.rotation.x = THREE.MathUtils.damp(leftLegPivot.rotation.x, 0, 10, dt);
@@ -2016,6 +2071,7 @@ export function createRobloxAvatar(
     setGender,
     applyAccessories,
     setHeldTrash,
+    setGymWear,
     triggerEmote,
     isEmoteActive,
     updateAnimation,

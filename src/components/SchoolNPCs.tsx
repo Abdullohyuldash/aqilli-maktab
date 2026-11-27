@@ -26,6 +26,7 @@ export interface SchoolNPCsProps {
   scene: THREE.Scene | null;
   castShadow: boolean;
   currentFloor: FloorNumber;
+  inGym: boolean;
   npcUpdateRef: React.MutableRefObject<NpcUpdateFn | null>;
   greetTriggerToken: number;
   onTeacherGreetingPromptChange: (prompt: TeacherGreetingPrompt | null) => void;
@@ -403,12 +404,15 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
   scene,
   castShadow,
   currentFloor,
+  inGym,
   npcUpdateRef,
   greetTriggerToken,
   onTeacherGreetingPromptChange,
   onTeacherGreetingOutcome,
 }) => {
   const currentFloorRef = useRef<FloorNumber>(currentFloor);
+  const inGymRef = useRef<boolean>(inGym);
+  const npcGroupRef = useRef<THREE.Group | null>(null);
   const greetTriggerTokenRef = useRef<number>(greetTriggerToken);
   const onPromptChangeRef = useRef(onTeacherGreetingPromptChange);
   const onOutcomeRef = useRef(onTeacherGreetingOutcome);
@@ -416,6 +420,16 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
   useEffect(() => {
     currentFloorRef.current = currentFloor;
   }, [currentFloor]);
+
+  useEffect(() => {
+    inGymRef.current = inGym;
+    if (npcGroupRef.current) {
+      npcGroupRef.current.visible = !inGym;
+    }
+    if (inGym) {
+      onPromptChangeRef.current(null);
+    }
+  }, [inGym]);
 
   useEffect(() => {
     greetTriggerTokenRef.current = greetTriggerToken;
@@ -434,6 +448,8 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
 
     const npcGroup = new THREE.Group();
     npcGroup.name = 'SchoolAtmosphericNPCs';
+    npcGroup.visible = !inGymRef.current;
+    npcGroupRef.current = npcGroup;
     scene.add(npcGroup);
 
     const rigs: RobloxAvatarRig[] = [];
@@ -956,6 +972,13 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
     resetStudentsForFloor(initializedFloor);
 
     const updateNpcs: NpcUpdateFn = (dt, elapsed, activeSubject, playerPos, doorRequestsOut) => {
+      if (inGymRef.current) {
+        npcGroup.visible = false;
+        clearGreetingPrompt();
+        return;
+      }
+      npcGroup.visible = true;
+
       const fl = currentFloorRef.current;
 
       // Decrement per-teacher greeting cooldowns every unpaused frame
@@ -981,6 +1004,7 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
       doorRequestsOut.alifbe = 0;
       doorRequestsOut.math = 0;
       doorRequestsOut.english = 0;
+      doorRequestsOut.pe = 0;
       doorRequestsOut.cs = 0;
       doorRequestsOut.science = 0;
 
@@ -1049,8 +1073,8 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
             }
           } else {
             const step = Math.min(dist, s.speed * dt);
-            s.x += (dx / dist) * step;
-            s.z += (dz / dist) * step;
+            s.x = THREE.MathUtils.clamp(s.x + (dx / dist) * step, -13.2, 13.2);
+            s.z = THREE.MathUtils.clamp(s.z + (dz / dist) * step, -10.8, 10.8);
             s.yaw = smoothTurn(s.yaw, Math.atan2(dx, dz), dt, 8.0);
           }
 
@@ -1593,6 +1617,7 @@ export const SchoolNPCs: React.FC<SchoolNPCsProps> = ({
     return () => {
       clearGreetingPrompt();
       npcUpdateRef.current = null;
+      npcGroupRef.current = null;
       scene.remove(npcGroup);
       rigs.forEach((r) => r.dispose());
       extraMaterials.forEach((m) => m.dispose());

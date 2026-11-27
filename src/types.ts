@@ -178,3 +178,39 @@ export interface EthicsFeedbackToast {
   title: string;
   subtitle: string;
 }
+
+export type GymModeKind =
+  | 'saf_mashqlari'
+  | 'number_reaction'
+  | 'tag_chase'
+  | 'urm_warmup'
+  | 'relay_course'
+  | 'kun_va_tun'
+  | 'apparatus_acro'
+  | 'jump_challenge'
+  | 'ball_throw'
+  | 'shashka_3d';
+
+export interface GymGameSnapshot {
+  lessonIndex: number; // 0..33
+  mode: GymModeKind;
+  step: number;
+  totalSteps: number;
+  score: number;
+  completed: boolean;
+  commandText: string;
+  subHintText: string;
+  timerSec: number | null;
+  // Contextual 3D mechanic HUD indicators:
+  actionPrompt: string | null; // e.g., "E — Turnikda mashq boshlash" or "E — Shashka stoliga o'tirish"
+  dayNightPhase?: 'kun' | 'tun'; // Lesson 19
+  timingActive?: boolean; // Apparatus / Jump power / Ball aim bar
+  timingValue?: number; // 0..100
+  timingSweetMin?: number; // 0..100
+  timingSweetMax?: number; // 0..100
+  timingLabel?: string; // e.g., "Space — Yashil zonada bosing!" or "Space bosib turing — Sakrash kuchi"
+  aimAngleDeg?: number; // Ball throw aim angle (-35..35)
+  shashkaActive?: boolean; // Seated at 3D Shashka board
+  shashkaTurnHint?: string;
+}
+
